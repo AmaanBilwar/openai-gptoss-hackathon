@@ -222,7 +222,7 @@ def list_repos(_args: argparse.Namespace) -> None:
         "User-Agent": "gh-oauth-cli",
     }
     response = requests.get("https://api.github.com/user/repos", headers=headers)
-    
+
     response.raise_for_status()
     print(response.json())
 
@@ -243,6 +243,8 @@ def merge_pr(args: argparse.Namespace) -> None:
 
     owner = args.owner
     repo = args.repo
+
+    
     pull_number = args.pull_number
 
     headers = {
