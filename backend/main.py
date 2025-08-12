@@ -146,7 +146,6 @@ def poll_for_access_token(client_id: str, device_code: str, interval: int) -> st
 
 def cmd_login(args: argparse.Namespace) -> None:
     client_id = GITHUB_CLIENT_ID
-    client_secret = GITHUB_CLIENT_SECRET
 
     scope = args.scope
     store = TokenStore()
@@ -211,6 +210,25 @@ def cmd_logout(_args: argparse.Namespace) -> None:
     print("Logged out locally (token removed).")
 
 
+def list_repos(_args: argparse.Namespace) -> None:
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+    response = requests.get("https://api.github.com/user/repos", headers=headers)
+    response.raise_for_status()
+    print(response.json())
+
+
+
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="GitHub OAuth Device Flow CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -235,25 +253,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     return parser
 
-def list_repos(_args: argparse.Namespace) -> None:
-    store = TokenStore()
-    token = store.load()
-    if not token:
-        _print_err("Not logged in. Run: python backend/main.py login")
-        sys.exit(1)
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
-        "User-Agent": "gh-oauth-cli",
-    }
-    response = requests.get("https://api.github.com/user/repos", headers=headers)
-    response.raise_for_status()
-    print(response.json())
 
 def cli(argv: Optional[list[str]] = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     args.func(args)
+
 
 
 if __name__ == "__main__":
