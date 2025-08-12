@@ -222,9 +222,60 @@ def list_repos(_args: argparse.Namespace) -> None:
         "User-Agent": "gh-oauth-cli",
     }
     response = requests.get("https://api.github.com/user/repos", headers=headers)
+    
     response.raise_for_status()
     print(response.json())
 
+
+def merge_pr(args: argparse.Namespace) -> None:
+    """Merge a pull request using GitHub REST API.
+
+    Required args:
+      --owner, --repo, --pull-number
+    Optional args:
+      --commit-title, --commit-message, --sha, --merge-method
+    """
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+    owner = args.owner
+    repo = args.repo
+    pull_number = args.pull_number
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pull_number}/merge"
+
+    body: dict = {}
+    if args.commit_title:
+        body["commit_title"] = args.commit_title
+    if args.commit_message:
+        body["commit_message"] = args.commit_message
+    if args.sha:
+        body["sha"] = args.sha
+    if args.merge_method:
+        if args.merge_method not in {"merge", "squash", "rebase"}:
+            _print_err("Invalid --merge-method. Must be one of: merge, squash, rebase")
+            sys.exit(1)
+        body["merge_method"] = args.merge_method
+
+    response = requests.put(url, headers=headers, json=body)
+    if response.status_code == 200:
+        print(response.json())
+        return
+    try:
+        payload = response.json()
+        message = payload.get("message") or response.text
+    except Exception:
+        message = response.text
+    _print_err(f"Failed to merge PR: {response.status_code} - {message}")
+    sys.exit(1)
 
 
 
@@ -250,6 +301,17 @@ def build_parser() -> argparse.ArgumentParser:
     # list repos
     p_list_repos = sub.add_parser("list-repos", help="List all repositories for the authenticated user")
     p_list_repos.set_defaults(func=list_repos)
+
+    # merge PR
+    p_merge = sub.add_parser("merge-pr", help="Merge a pull request")
+    p_merge.add_argument("--owner", required=True, help="Repository owner")
+    p_merge.add_argument("--repo", required=True, help="Repository name")
+    p_merge.add_argument("--pull-number", type=int, required=True, help="Pull request number")
+    p_merge.add_argument("--commit-title", help="Title for the merge commit")
+    p_merge.add_argument("--commit-message", help="Message to append to the merge commit")
+    p_merge.add_argument("--sha", help="Head SHA that must match to allow merge")
+    p_merge.add_argument("--merge-method", choices=["merge", "squash", "rebase"], help="Merge method")
+    p_merge.set_defaults(func=merge_pr)
 
     return parser
 
