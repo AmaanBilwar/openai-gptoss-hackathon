@@ -1,2 +1,2 @@
 [console_scripts]
-git-wizard = cli.chat:cli
+kite = cli.chat:cli

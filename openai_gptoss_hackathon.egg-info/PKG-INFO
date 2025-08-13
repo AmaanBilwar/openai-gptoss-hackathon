@@ -4,5 +4,8 @@ Version: 0.1.0
 Summary: Add your description here
 Requires-Python: >=3.13
 Description-Content-Type: text/markdown
+Requires-Dist: groq>=0.31.0
 Requires-Dist: openai>=1.99.9
+Requires-Dist: requests>=2.32.4
+Requires-Dist: ruff>=0.12.8
 Requires-Dist: typer>=0.16.0
