@@ -46,12 +46,13 @@
 
 - main logic
     - convert github api into tools : Vishesh + Amaan
-        - merge (amaan)
-        - rebase (amaan)
-        - switch branches (vishesh)
-        - push (amaan + vishesh)
-        - new branch (vishesh)  
-        - make pr (vishesh)
+        - [x] merge pr (amaan)
+        - [x] new branch (vishesh)  
+        - [x] create pr (amaan)
+        - [ ] rebase (amaan)
+        - [x] make branch (vishesh)
+        - [ ] switch branches (vishesh)
+        - [ ] push (amaan + vishesh)
     - tool calling logic : Amaan
 
     
