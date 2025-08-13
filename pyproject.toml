@@ -1,0 +1,12 @@
+[project]
+name = "openai-gptoss-hackathon"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "openai>=1.99.9",
+    "typer>=0.16.0",
+]
+[project.scripts]
+git-wizard = "cli.chat:cli"
