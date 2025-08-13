@@ -606,38 +606,6 @@ def unlock_issue(args: argparse.Namespace) -> None:
         response.raise_for_status()
 
 
-# delete an issue
-def delete_issue(args: argparse.Namespace) -> None:
-    store = TokenStore()
-    token = store.load()
-    if not token:
-        _print_err("Not logged in. Run: python backend/main.py login")
-        sys.exit(1)
-
-    owner = args.owner
-    repo = args.repo
-    issue_number = args.issue_number
-
-    # Confirm deletion if not forced
-    if not args.force:
-        confirm = input(f"Are you sure you want to delete issue #{issue_number}? This action cannot be undone. (y/N): ")
-        if confirm.lower() != 'y':
-            print("Deletion cancelled.")
-            return
-
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {token}",
-        "User-Agent": "gh-oauth-cli",
-    }
-
-    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
-
-    response = requests.delete(url, headers=headers)
-    if response.status_code == 204:
-        print(f"Issue #{issue_number} deleted successfully!")
-    else:
-        response.raise_for_status()
 
 
 # build parser
