@@ -91,6 +91,10 @@ class Kite:
                     model="openai/gpt-oss-120b",
                     messages=[
                     {
+                        "role": "system",
+                        "content": system_prompt
+                    },
+                    {
                         "role": "user",
                         "content": message
                     }
