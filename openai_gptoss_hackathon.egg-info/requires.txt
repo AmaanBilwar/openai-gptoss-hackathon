@@ -1,2 +1,5 @@
+groq>=0.31.0
 openai>=1.99.9
+requests>=2.32.4
+ruff>=0.12.8
 typer>=0.16.0

@@ -5,8 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "dotenv>=0.9.9",
+    "groq>=0.31.0",
     "openai>=1.99.9",
+    "requests>=2.32.4",
+    "ruff>=0.12.8",
     "typer>=0.16.0",
 ]
 [project.scripts]
-git-wizard = "cli.chat:cli"
+kite = "cli.chat:cli"
