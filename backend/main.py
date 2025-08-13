@@ -146,6 +146,7 @@ def poll_for_access_token(client_id: str, device_code: str, interval: int) -> st
 
 def cmd_login(args: argparse.Namespace) -> None:
     client_id = GITHUB_CLIENT_ID
+    client_secret = GITHUB_CLIENT_SECRET
 
     scope = args.scope
     store = TokenStore()
@@ -222,10 +223,8 @@ def list_repos(_args: argparse.Namespace) -> None:
         "User-Agent": "gh-oauth-cli",
     }
     response = requests.get("https://api.github.com/user/repos", headers=headers)
-
     response.raise_for_status()
     print(response.json())
-
 
 
 def create_pr(args: argparse.Namespace) -> None:
@@ -311,8 +310,6 @@ def create_pr(args: argparse.Namespace) -> None:
     sys.exit(1)
 
 
-
-
 def merge_pr(args: argparse.Namespace) -> None:
     """Merge a pull request using GitHub REST API.
 
@@ -329,8 +326,6 @@ def merge_pr(args: argparse.Namespace) -> None:
 
     owner = args.owner
     repo = args.repo
-
-
     pull_number = args.pull_number
 
     headers = {
@@ -366,6 +361,54 @@ def merge_pr(args: argparse.Namespace) -> None:
     sys.exit(1)
 
 
+def cmd_create_branch(args: argparse.Namespace) -> None:
+    """Create a new branch in a GitHub repository."""
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+
+    repo = args.repo
+    new_branch = args.branch
+    from_branch = args.from_branch
+
+    try:
+        if not from_branch:
+            # If no base branch is specified, find the repo's default branch and checkout from there
+            repo_details = _request_json("GET", f"https://api.github.com/repos/{repo}", headers=headers)
+            from_branch = repo_details["default_branch"]
+            print(f"Base branch not specified, using default branch: {from_branch}")
+
+        branch_details = _request_json("GET", f"https://api.github.com/repos/{repo}/branches/{from_branch}", headers=headers)
+        base_sha = branch_details["commit"]["sha"]
+        print(f"Found SHA for base branch '{from_branch}': {base_sha}")
+
+        # 2. Create the new branch (as a new git ref)
+        ref_payload = {
+            "ref": f"refs/heads/{new_branch}",
+            "sha": base_sha,
+        }
+        created_ref = _request_json("POST", f"https://api.github.com/repos/{repo}/git/refs", headers=headers, json=ref_payload)
+        
+        print(f"Successfully created branch '{new_branch}' on '{repo}'.")
+        print(f"URL: https://github.com/{repo}/tree/{new_branch}")
+
+    except requests.HTTPError as e:
+        if e.response is not None:
+            _print_err(f"Error: {e.response.status_code} - {e.response.text}")
+        else:
+            _print_err(f"An HTTP error occurred: {e}")
+        sys.exit(1)
+    except Exception as e:
+        _print_err(f"An unexpected error occurred: {e}")
+        sys.exit(1)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -389,6 +432,13 @@ def build_parser() -> argparse.ArgumentParser:
     # list repos
     p_list_repos = sub.add_parser("list-repos", help="List all repositories for the authenticated user")
     p_list_repos.set_defaults(func=list_repos)
+
+    # create-branch
+    p_create_branch = sub.add_parser("create-branch", help="Create a new branch")
+    p_create_branch.add_argument("--repo", required=True, help="The repository name in 'owner/repo' format")
+    p_create_branch.add_argument("--branch", required=True, help="The name for the new branch")
+    p_create_branch.add_argument("--from-branch", help="The base branch to branch from (defaults to repo's default)")
+    p_create_branch.set_defaults(func=cmd_create_branch)
 
     # merge PR
     p_merge = sub.add_parser("merge-pr", help="Merge a pull request")
@@ -430,7 +480,6 @@ def cli(argv: Optional[list[str]] = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     args.func(args)
-
 
 
 if __name__ == "__main__":
