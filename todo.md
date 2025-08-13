@@ -48,7 +48,15 @@
     - convert github api into tools : Vishesh + Amaan
         - [x] merge pr (amaan)
         - [x] create pr (amaan)
+        - [x] list repo issues (amaan)
+        - [x] create issue (amaan)
+        - [x] get issue (amaan)
+        - [x] update issue (amaan)
+        - [x] lock issue (amaan)
+        - [x] unlock issue (amaan)
+
         - [ ] rebase (amaan)
+
         - [x] new branch (vishesh)  
         - [x] make branch (vishesh)
         - [ ] switch branches (vishesh)
