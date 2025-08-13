@@ -3,8 +3,6 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from openai import OpenAI
-import requests
 from groq import Groq
 import os
 from dotenv import load_dotenv
@@ -30,7 +28,7 @@ class Kite:
         try:
             client = Groq(api_key=self.groq_api_key)
             # Test with a simple request
-            completion = client.chat.completions.create(
+            client.chat.completions.create(
                 model="mixtral-8x7b-32768",
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=10
@@ -79,7 +77,6 @@ class Kite:
 
             Always use available tools for Git operations and maintain audit logs for continuous learning and improvement.
             """
-        conversation_text = f"{system_prompt}\n\nUser: {message}\nAssistant:"
         
         client = Groq(api_key=self.groq_api_key)
 
