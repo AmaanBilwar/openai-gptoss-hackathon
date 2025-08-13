@@ -39,6 +39,7 @@ class DeviceCodeResponse:
     interval: int
 
 
+# token store
 class TokenStore:
     """Persist access token using OS keyring when available, else a file in the home directory."""
 
@@ -89,7 +90,7 @@ class TokenStore:
         except Exception:
             pass
 
-
+# start device code flow
 def start_device_code_flow(client_id: str, scope: str) -> DeviceCodeResponse:
     data = {"client_id": client_id, "scope": scope}
     payload = _request_json("POST", GITHUB_DEVICE_CODE_URL, data=data)
@@ -103,6 +104,7 @@ def start_device_code_flow(client_id: str, scope: str) -> DeviceCodeResponse:
     )
 
 
+# poll for access token
 def poll_for_access_token(client_id: str, device_code: str, interval: int) -> str:
     data = {
         "client_id": client_id,
@@ -144,6 +146,7 @@ def poll_for_access_token(client_id: str, device_code: str, interval: int) -> st
         raise RuntimeError(f"Unexpected token response: {payload}")
 
 
+# login
 def cmd_login(args: argparse.Namespace) -> None:
     client_id = GITHUB_CLIENT_ID
     client_secret = GITHUB_CLIENT_SECRET
@@ -178,6 +181,7 @@ def cmd_login(args: argparse.Namespace) -> None:
     print("Login successful. Access token saved.")
 
 
+# whoami
 def cmd_whoami(_args: argparse.Namespace) -> None:
     store = TokenStore()
     token = store.load()
@@ -205,12 +209,13 @@ def cmd_whoami(_args: argparse.Namespace) -> None:
     print(f"{login} {f'({name})' if name else ''} - id: {user_id}")
 
 
+# logout
 def cmd_logout(_args: argparse.Namespace) -> None:
     store = TokenStore()
     store.delete()
     print("Logged out locally (token removed).")
 
-
+# list repos
 def list_repos(_args: argparse.Namespace) -> None:
     store = TokenStore()
     token = store.load()
@@ -226,7 +231,7 @@ def list_repos(_args: argparse.Namespace) -> None:
     response.raise_for_status()
     print(response.json())
 
-
+# create pr 
 def create_pr(args: argparse.Namespace) -> None:
     """Create a pull request using GitHub REST API.
 
@@ -309,7 +314,7 @@ def create_pr(args: argparse.Namespace) -> None:
         _print_err("Hint: Ensure your token has the 'repo' scope (or 'public_repo' for public repos). Re-run login with --scope repo if needed.")
     sys.exit(1)
 
-
+# merge pr
 def merge_pr(args: argparse.Namespace) -> None:
     """Merge a pull request using GitHub REST API.
 
@@ -360,8 +365,8 @@ def merge_pr(args: argparse.Namespace) -> None:
     _print_err(f"Failed to merge PR: {response.status_code} - {message}")
     sys.exit(1)
 
-
-def cmd_create_branch(args: argparse.Namespace) -> None:
+# create branch
+def create_branch(args: argparse.Namespace) -> None:
     """Create a new branch in a GitHub repository."""
     store = TokenStore()
     token = store.load()
@@ -410,7 +415,7 @@ def cmd_create_branch(args: argparse.Namespace) -> None:
         _print_err(f"An unexpected error occurred: {e}")
         sys.exit(1)
 
-
+# build parser
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="GitHub OAuth Device Flow CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -438,7 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_create_branch.add_argument("--repo", required=True, help="The repository name in 'owner/repo' format")
     p_create_branch.add_argument("--branch", required=True, help="The name for the new branch")
     p_create_branch.add_argument("--from-branch", help="The base branch to branch from (defaults to repo's default)")
-    p_create_branch.set_defaults(func=cmd_create_branch)
+    p_create_branch.set_defaults(func=create_branch)
 
     # merge PR
     p_merge = sub.add_parser("merge-pr", help="Merge a pull request")
