@@ -48,8 +48,9 @@
     - convert github api into tools : Vishesh + Amaan
         - merge (amaan)
         - rebase (amaan)
+        - switch branches (vishesh)
         - push (amaan + vishesh)
-        - new branch (vishesh)
+        - new branch (vishesh)  
         - make pr (vishesh)
     - tool calling logic : Amaan
 
@@ -60,4 +61,3 @@
     - auth + db connection (for web dashboard settings) - Ani
     - llm history tracking + thinking / reasoning - Amaan
     - what is the agent doing right now 
-
