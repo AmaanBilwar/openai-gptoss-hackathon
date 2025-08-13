@@ -284,25 +284,16 @@ def create_pr(args: argparse.Namespace) -> None:
 
     if response.status_code in {201}:
         pr = response.json()
-        # Human-friendly confirmation
-        try:
-            pr_num = pr.get("number")
-            pr_url = pr.get("html_url")
-            if pr_num and pr_url:
-                print(f"Created PR #{pr_num} - {pr_url}")
-        except Exception:
-            pass
-        # Full response for tooling/debugging
         print(pr)
-        # Optionally open in browser
-        if getattr(args, "open", False):
-            try:
-                html_url = pr.get("html_url")
-                if html_url:
-                    webbrowser.open(html_url, new=2)
-            except Exception:
-                pass
-        return
+        ## Optionally open in browser
+        # if getattr(args, "open", False):
+        #     try:
+        #         html_url = pr.get("html_url")
+        #         if html_url:
+        #             webbrowser.open(html_url, new=2)
+        #     except Exception:
+        #         pass
+        # return
 
     try:
         payload = response.json()
