@@ -47,14 +47,14 @@
 - main logic
     - convert github api into tools : Vishesh + Amaan
         - [x] merge pr (amaan)
-        - [x] new branch (vishesh)  
         - [x] create pr (amaan)
         - [ ] rebase (amaan)
+        - [x] new branch (vishesh)  
         - [x] make branch (vishesh)
         - [ ] switch branches (vishesh)
         - [ ] push (amaan + vishesh)
-    - tool calling logic : Amaan
 
+    - tool calling logic : Amaan
     
     - LLM chat + system prompt : Ani
 
