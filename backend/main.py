@@ -227,6 +227,92 @@ def list_repos(_args: argparse.Namespace) -> None:
     print(response.json())
 
 
+
+def create_pr(args: argparse.Namespace) -> None:
+    """Create a pull request using GitHub REST API.
+
+    Required args:
+      --owner, --repo, --title, --head, --base
+    Optional args:
+      --body, --draft, --no-maintainer-modify, --open
+    """
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login --scope repo")
+        sys.exit(1)
+
+    owner = args.owner
+    repo = args.repo
+    title = args.title
+    head = args.head
+    base = args.base
+
+    if not owner or not repo or not title or not head or not base:
+        _print_err("Missing required arguments: --owner, --repo, --title, --head, --base")
+        sys.exit(1)
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+
+    body: dict = {
+        "title": title,
+        "head": head,
+        "base": base,
+    }
+    if getattr(args, "body", None):
+        body["body"] = args.body
+    # maintainer_can_modify defaults to True on GitHub; respect flag to disable
+    maintainer_can_modify = not getattr(args, "no_maintainer_modify", False)
+    body["maintainer_can_modify"] = maintainer_can_modify
+    if getattr(args, "draft", False):
+        body["draft"] = True
+
+    try:
+        response = requests.post(url, headers=headers, json=body)
+    except requests.RequestException as exc:
+        _print_err(f"Request failed: {exc}")
+        sys.exit(1)
+
+    if response.status_code in {201}:
+        pr = response.json()
+        # Human-friendly confirmation
+        try:
+            pr_num = pr.get("number")
+            pr_url = pr.get("html_url")
+            if pr_num and pr_url:
+                print(f"Created PR #{pr_num} - {pr_url}")
+        except Exception:
+            pass
+        # Full response for tooling/debugging
+        print(pr)
+        # Optionally open in browser
+        if getattr(args, "open", False):
+            try:
+                html_url = pr.get("html_url")
+                if html_url:
+                    webbrowser.open(html_url, new=2)
+            except Exception:
+                pass
+        return
+
+    try:
+        payload = response.json()
+        message = payload.get("message") or response.text
+    except Exception:
+        message = response.text
+    _print_err(f"Failed to create PR: {response.status_code} - {message}")
+    if response.status_code in {401, 403}:
+        _print_err("Hint: Ensure your token has the 'repo' scope (or 'public_repo' for public repos). Re-run login with --scope repo if needed.")
+    sys.exit(1)
+
+
+
+
 def merge_pr(args: argparse.Namespace) -> None:
     """Merge a pull request using GitHub REST API.
 
@@ -244,7 +330,7 @@ def merge_pr(args: argparse.Namespace) -> None:
     owner = args.owner
     repo = args.repo
 
-    
+
     pull_number = args.pull_number
 
     headers = {
@@ -314,6 +400,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_merge.add_argument("--sha", help="Head SHA that must match to allow merge")
     p_merge.add_argument("--merge-method", choices=["merge", "squash", "rebase"], help="Merge method")
     p_merge.set_defaults(func=merge_pr)
+
+    # create PR
+    p_create = sub.add_parser("create-pr", help="Create a pull request")
+    p_create.add_argument("--owner", required=True, help="Repository owner")
+    p_create.add_argument("--repo", required=True, help="Repository name")
+    p_create.add_argument("--title", required=True, help="Title for the pull request")
+    p_create.add_argument(
+        "--head",
+        required=True,
+        help="The name of the branch where your changes are implemented (e.g., 'feature-branch' or 'forkuser:feature-branch')",
+    )
+    p_create.add_argument("--base", required=True, help="The name of the branch you want the changes pulled into (e.g., 'main')")
+    p_create.add_argument("--body", help="Body/description for the pull request")
+    p_create.add_argument("--draft", action="store_true", help="Create the pull request as a draft")
+    p_create.add_argument(
+        "--no-maintainer-modify",
+        dest="no_maintainer_modify",
+        action="store_true",
+        help="Disable 'Allow edits by maintainers'",
+    )
+    p_create.add_argument("--open", action="store_true", help="Open the created PR in your browser")
+    p_create.set_defaults(func=create_pr)
 
     return parser
 
