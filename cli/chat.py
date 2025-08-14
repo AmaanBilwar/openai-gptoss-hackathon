@@ -79,7 +79,6 @@ class Kite:
 
             Always use available tools for Git operations and maintain audit logs for continuous learning and improvement.
             """
-        conversation_text = f"{system_prompt}\n\nUser: {message}\nAssistant:"
         
         client = Groq(api_key=self.groq_api_key)
 
