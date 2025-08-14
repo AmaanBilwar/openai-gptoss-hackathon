@@ -4,6 +4,8 @@ import os
 import sys
 import time
 import webbrowser
+import re
+import subprocess
 from dataclasses import dataclass
 from typing import Optional
 from dotenv import load_dotenv
@@ -406,6 +408,78 @@ def create_branch(args: argparse.Namespace) -> None:
         _print_err(f"An unexpected error occurred: {e}")
         sys.exit(1)
 
+
+# checkout branch
+def checkout_branch(args: argparse.Namespace) -> None:
+    """Checks out a branch, creating it if it doesn't exist and the user confirms."""
+    branch_name = args.branch
+
+    # Check if branch exists locally
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--verify", f"refs/heads/{branch_name}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        # If it exists, check it out
+        subprocess.run(["git", "checkout", branch_name], check=True)
+        print(f"Switched to existing branch '{branch_name}'.")
+        return
+    except subprocess.CalledProcessError:
+        # Branch does not exist locally, which is fine. We'll ask to create it.
+        pass
+
+    print(f"Branch '{branch_name}' does not exist.")
+    try:
+        answer = input("Would you like to create it? [y/n]: ").lower().strip()
+        if answer not in ["y", "yes"]:
+            print("Checkout aborted.")
+            return
+    except (KeyboardInterrupt, EOFError):
+        print("\nCheckout aborted.")
+        return
+
+    # User wants to create the branch.
+    print(f"Creating branch '{branch_name}'...")
+    try:
+        # Get repo from git remote url
+        remote_url = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        
+        match = re.search(r"github\.com[/:]([\w-]+/[\w-]+)(?:\.git)?$", remote_url)
+        if not match:
+            _print_err("Could not determine repository from remote 'origin'.")
+            sys.exit(1)
+        repo_slug = match.group(1)
+
+        # Create a mock args object for create_branch
+        create_args = argparse.Namespace(
+            repo=repo_slug,
+            branch=branch_name,
+            from_branch=args.from_branch, # Pass along from_branch if provided
+        )
+        create_branch(create_args) # Call the existing create_branch function
+
+        # Now that it's created on the remote, fetch and check it out
+        print("Fetching from remote...")
+        subprocess.run(["git", "fetch", "origin"], check=True)
+        subprocess.run(["git", "checkout", branch_name], check=True)
+        print(f"Successfully created and switched to branch '{branch_name}'.")
+
+    except subprocess.CalledProcessError as e:
+        _print_err(f"A git command failed: {e.stderr}")
+        sys.exit(1)
+    except Exception as e:
+        _print_err(f"An unexpected error occurred during branch creation: {e}")
+        sys.exit(1)
+
+
+
 # list repo issues 
 def list_repo_issues(args: argparse.Namespace) -> None:
     store = TokenStore()
@@ -606,8 +680,6 @@ def unlock_issue(args: argparse.Namespace) -> None:
         response.raise_for_status()
 
 
-
-
 # build parser
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="GitHub OAuth Device Flow CLI")
@@ -637,6 +709,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_create_branch.add_argument("--branch", required=True, help="The name for the new branch")
     p_create_branch.add_argument("--from-branch", help="The base branch to branch from (defaults to repo's default)")
     p_create_branch.set_defaults(func=create_branch)
+
+    # checkout-branch
+    p_checkout = sub.add_parser("checkout-branch", help="Checkout a branch, creating it if needed")
+    p_checkout.add_argument("branch", help="The name of the branch to checkout or create")
+    p_checkout.add_argument("--from-branch", help="If creating, the base branch to branch from (defaults to repo's default)")
+    p_checkout.set_defaults(func=checkout_branch)
 
     # merge PR
     p_merge = sub.add_parser("merge-pr", help="Merge a pull request")
