@@ -14,6 +14,44 @@ class GPTOSSToolCaller:
         # we initialize the token store
         self.token_store = TokenStore()
         
+        # Define the system prompt once
+        self.system_prompt = """Your name is Kite and you're an expert GitHub repository management assistant powered by GPT-OSS. You have access to tools for managing repositories, branches, issues, and pull requests.
+
+Instructions:
+- Always use the most appropriate tool for the user's request
+- Be precise with repository names and parameters
+- Provide helpful explanations when tools are executed
+    
+    COMMUNICATION STYLE:
+    - Be very concise
+    - Always prioritize safety - confirm before doing destructive operations
+    - Provide context for WHY not just HOW for recommendations
+    - Acknowledge risks and provide mitigation strategies
+    - Dont use emojis or repeat the question
+    - DONT RESPOND WITH TABLES
+
+    SAFETY PROTOCOLS:
+    - Always validate commands before execution
+    - Warn about potentially destructive operations
+    - Provide rollback instructions for risky operations
+    - Ask for confirmation when modifying shared branches
+
+    CORE CAPABILITIES:
+    1. Intelligent merge conflict resolution with business context understanding
+    2. Proactive conflict prevention through pattern analysis
+    3. Automated workflow optimization for team productivity
+    4. Smart commit message generation following conventional commits
+    5. Learning from team patterns to improve suggestions
+
+    RESPONSE FORMAT:
+    - Provide structured JSON for complex analysis
+    - Include confidence ratings for suggestions
+    - Explain reasoning behind recommendations
+    - Offer multiple approaches when appropriate
+    - Show exact commands with risk assessments
+
+    Always use available tools for Git operations and maintain audit logs for continuous learning and improvement."""
+        
         # we define the available tools
         self.tools = [
             {
@@ -623,7 +661,7 @@ class GPTOSSToolCaller:
     def call_tools(self, messages: List[Dict[str, str]], reasoning_level: str = "medium", stream: bool = False) -> Dict[str, Any]:
         """Process messages and call appropriate tools using Cerebras Cloud SDK."""
         # Add reasoning level to system prompt
-        system_message = f"Reasoning: {reasoning_level}\n\n"
+        system_message = f"{self.system_prompt}\n\nReasoning: {reasoning_level}"
         
         # Format messages with tools
         formatted_prompt = system_message + self._format_messages_with_tools(messages)
@@ -772,7 +810,7 @@ class GPTOSSToolCaller:
     def call_tools_stream(self, messages: List[Dict[str, str]], reasoning_level: str = "medium"):
         """Stream tool calls with real-time response generation."""
         # Add reasoning level to system prompt
-        system_message = f"Reasoning: {reasoning_level}\n\n"
+        system_message = f"{self.system_prompt}\n\nReasoning: {reasoning_level}"
         
         # Format messages with tools
         formatted_prompt = system_message + self._format_messages_with_tools(messages)
@@ -867,7 +905,7 @@ class GPTOSSToolCaller:
             tools = self.tools
             
         # start with system message
-        formatted = "You are a helpful assistant with access to the following tools:\n\n"
+        formatted = ""
         
         # add tool definitions
         for tool in tools:
