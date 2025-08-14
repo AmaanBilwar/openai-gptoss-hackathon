@@ -1,2 +1,3 @@
+- [ ] add fallback responses in the system prompt 
 - [ ] llm response caching
 - [ ] implement rate limits

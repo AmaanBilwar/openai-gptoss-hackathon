@@ -27,6 +27,27 @@ class GPTOSSToolCaller:
             {
                 "type": "function",
                 "function": {
+                    "name": "checkout_branch",
+                    "description": "Checkout a branch for a given repository.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "repo": {
+                                "type": "string",
+                                "description": "The repository name in 'owner/repo' format",
+                            },
+                            "branch": {
+                                "type": "string",
+                                "description": "The name of the branch to checkout",
+                            },
+                        },
+                        "required": ["repo", "branch"],
+                    },
+                }
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "create_pr",
                     "description": "Create a pull request for a given repository.",
                     "parameters": {
@@ -218,6 +239,7 @@ class GPTOSSToolCaller:
         # Tool implementations
         self.tool_implementations = {
             # login logout and whoami not added
+            "checkout_branch": self._checkout_branch_implementation,
             "list_repos": self._list_repos_implementation,
             "create_pr": self._create_pr_implementation,
             "create_issue": self._create_issue_implementation,
@@ -384,6 +406,40 @@ class GPTOSSToolCaller:
                     "branch": branch
                 }
             
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "repo": repo,
+                "branch": branch
+            }
+
+    def _checkout_branch_implementation(self, repo: str, branch: str) -> Dict[str, Any]:
+        """Implementation of checkout_branch function using GitHub API."""
+        try:
+            headers = self._get_github_headers()
+            
+            # Normalize repo (allow just repo name by inferring authenticated owner)
+            if '/' not in repo:
+                me = requests.get("https://api.github.com/user", headers=headers).json()
+                login = me.get("login")
+                if not login:
+                    raise ValueError("Could not determine authenticated user for repo inference")
+                repo = f"{login}/{repo}"
+            
+            url = f"https://api.github.com/repos/{repo}/branches/{branch}"
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+
+            branch_data = response.json()
+            return {
+                "success": True,
+                "repo": repo,
+                "branch": branch,
+                "branch_data": branch_data,
+                "url": f"https://github.com/{repo}/tree/{branch}",
+                "result": branch_data
+            }
         except Exception as e:
             return {
                 "success": False,
