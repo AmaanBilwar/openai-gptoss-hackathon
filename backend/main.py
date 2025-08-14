@@ -286,25 +286,16 @@ def create_pr(args: argparse.Namespace) -> None:
 
     if response.status_code in {201}:
         pr = response.json()
-        # Human-friendly confirmation
-        try:
-            pr_num = pr.get("number")
-            pr_url = pr.get("html_url")
-            if pr_num and pr_url:
-                print(f"Created PR #{pr_num} - {pr_url}")
-        except Exception:
-            pass
-        # Full response for tooling/debugging
         print(pr)
-        # Optionally open in browser
-        if getattr(args, "open", False):
-            try:
-                html_url = pr.get("html_url")
-                if html_url:
-                    webbrowser.open(html_url, new=2)
-            except Exception:
-                pass
-        return
+        ## Optionally open in browser
+        # if getattr(args, "open", False):
+        #     try:
+        #         html_url = pr.get("html_url")
+        #         if html_url:
+        #             webbrowser.open(html_url, new=2)
+        #     except Exception:
+        #         pass
+        # return
 
     try:
         payload = response.json()
@@ -417,6 +408,7 @@ def create_branch(args: argparse.Namespace) -> None:
         _print_err(f"An unexpected error occurred: {e}")
         sys.exit(1)
 
+
 # checkout branch
 def checkout_branch(args: argparse.Namespace) -> None:
     """Checks out a branch, creating it if it doesn't exist and the user confirms."""
@@ -487,6 +479,207 @@ def checkout_branch(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+
+# list repo issues 
+def list_repo_issues(args: argparse.Namespace) -> None:
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+    owner = args.owner
+    repo = args.repo
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues"
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    issues = response.json()
+    if not issues:
+        print(f"There are no issues for this repo {repo}.")
+    else:
+        print(f"The number of issues are {len(issues)}. The issues for the repo {repo} are as follows:")
+        for issue in issues:
+            number = issue.get("number", "?")
+            title = issue.get("title", "")
+            print(f"- #{number}: {title}")
+
+
+# create issue
+def create_issue(args: argparse.Namespace) -> None:
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+
+    owner = args.owner
+    repo = args.repo
+    title = args.title
+    body = args.body
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues"
+    body = {
+        "title": title,
+        "body": body,
+    }
+
+    response = requests.post(url, headers=headers, json=body)
+    if response.status_code == 201:
+        issue = response.json()
+        print(f"Issue created successfully! Issue #{issue.get('number', '?')}: {issue.get('title', '')}")
+        print(f"URL: {issue.get('html_url', 'N/A')}")
+        return
+
+# get an issue
+def get_issue(args: argparse.Namespace) -> None:
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+    owner = args.owner
+    repo = args.repo
+    issue_number = args.issue_number
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    issue = response.json()
+    
+    print(f"Issue #{issue.get('number', '?')}: {issue.get('title', '')}")
+    print(f"State: {issue.get('state', 'N/A')}")
+    print(f"Created by: {issue.get('user', {}).get('login', 'N/A')}")
+    print(f"Created at: {issue.get('created_at', 'N/A')}")
+    print(f"Updated at: {issue.get('updated_at', 'N/A')}")
+    print(f"URL: {issue.get('html_url', 'N/A')}")
+    if issue.get('body'):
+        print(f"\nDescription:\n{issue.get('body')}")
+
+
+# update an issue
+def update_issue(args: argparse.Namespace) -> None:
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+    owner = args.owner
+    repo = args.repo
+    issue_number = args.issue_number
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}"
+    
+    # Build update payload with only provided fields
+    update_data = {}
+    if args.title is not None:
+        update_data["title"] = args.title
+    if args.body is not None:
+        update_data["body"] = args.body
+    if args.state is not None:
+        update_data["state"] = args.state
+    if args.assignee is not None:
+        update_data["assignee"] = args.assignee
+    if args.assignees is not None:
+        update_data["assignees"] = args.assignees.split(',')
+    if args.milestone is not None:
+        update_data["milestone"] = args.milestone
+    if args.labels is not None:
+        update_data["labels"] = args.labels.split(',')
+
+    response = requests.patch(url, headers=headers, json=update_data)
+    response.raise_for_status()
+    issue = response.json()
+    
+    print(f"Issue updated successfully! Issue #{issue.get('number', '?')}: {issue.get('title', '')}")
+    print(f"URL: {issue.get('html_url', 'N/A')}")
+
+
+# lock an issue
+def lock_issue(args: argparse.Namespace) -> None:
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+    owner = args.owner
+    repo = args.repo
+    issue_number = args.issue_number
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/lock"
+    
+    # Build lock payload
+    lock_data = {}
+    if args.lock_reason:
+        lock_data["lock_reason"] = args.lock_reason
+
+    response = requests.put(url, headers=headers, json=lock_data)
+    if response.status_code == 204:
+        print(f"Issue #{issue_number} locked successfully!")
+    else:
+        response.raise_for_status()
+
+
+# unlock an issue
+def unlock_issue(args: argparse.Namespace) -> None:
+    store = TokenStore()
+    token = store.load()
+    if not token:
+        _print_err("Not logged in. Run: python backend/main.py login")
+        sys.exit(1)
+
+    owner = args.owner
+    repo = args.repo
+    issue_number = args.issue_number
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "gh-oauth-cli",
+    }
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}/lock"
+
+    response = requests.delete(url, headers=headers)
+    if response.status_code == 204:
+        print(f"Issue #{issue_number} unlocked successfully!")
+    else:
+        response.raise_for_status()
+
+
 # build parser
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="GitHub OAuth Device Flow CLI")
@@ -555,6 +748,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_create.add_argument("--open", action="store_true", help="Open the created PR in your browser")
     p_create.set_defaults(func=create_pr)
+
+    # list repo issues
+    p_list_issues = sub.add_parser("list-issues", help="List all issues for a repository")
+    p_list_issues.add_argument("--owner", required=True, help="Repository owner")
+    p_list_issues.add_argument("--repo", required=True, help="Repository name")
+    p_list_issues.set_defaults(func=list_repo_issues)
+
+    # create issue
+    p_create_issue = sub.add_parser("create-issue", help="Create an issue for a repository")
+    p_create_issue.add_argument("--owner", required=True, help="Repository owner")
+    p_create_issue.add_argument("--repo", required=True, help="Repository name")
+    p_create_issue.add_argument("--title", required=True, help="Title for the issue")
+    p_create_issue.add_argument("--body", help="Body/description for the issue")
+    p_create_issue.set_defaults(func=create_issue)
+
+    # get issue 
+    p_get_issue = sub.add_parser("get-issue", help="Get a specific issue")
+    p_get_issue.add_argument("--owner", required=True, help="Repository owner")
+    p_get_issue.add_argument("--repo", required=True, help="Repository name")
+    p_get_issue.add_argument("--issue-number", type=int, required=True, help="Issue number")
+    p_get_issue.set_defaults(func=get_issue)
+
+    # update issue
+    p_update_issue = sub.add_parser("update-issue", help="Update an issue")
+    p_update_issue.add_argument("--owner", required=True, help="Repository owner")
+    p_update_issue.add_argument("--repo", required=True, help="Repository name")
+    p_update_issue.add_argument("--issue-number", type=int, required=True, help="Issue number")
+    p_update_issue.add_argument("--title", help="New title for the issue")
+    p_update_issue.add_argument("--body", help="New body/description for the issue")
+    p_update_issue.add_argument("--state", choices=["open", "closed"], help="State of the issue")
+    p_update_issue.add_argument("--assignee", help="Username to assign the issue to")
+    p_update_issue.add_argument("--assignees", help="Comma-separated list of usernames to assign")
+    p_update_issue.add_argument("--milestone", type=int, help="Milestone ID to assign")
+    p_update_issue.add_argument("--labels", help="Comma-separated list of label names")
+    p_update_issue.set_defaults(func=update_issue)
+
+    # lock issue 
+    p_lock_issue = sub.add_parser("lock-issue", help="Lock an issue")
+    p_lock_issue.add_argument("--owner", required=True, help="Repository owner")
+    p_lock_issue.add_argument("--repo", required=True, help="Repository name")
+    p_lock_issue.add_argument("--issue-number", type=int, required=True, help="Issue number")
+    p_lock_issue.add_argument("--lock-reason", choices=["off-topic", "too heated", "resolved", "spam"], 
+                             help="Reason for locking the issue")
+    p_lock_issue.set_defaults(func=lock_issue)
+
+    # unlock issue 
+
+    p_unlock_issue = sub.add_parser("unlock-issue", help="Unlock an issue")
+    p_unlock_issue.add_argument("--owner", required=True, help="Repository owner")
+    p_unlock_issue.add_argument("--repo", required=True, help="Repository name")
+    p_unlock_issue.add_argument("--issue-number", type=int, required=True, help="Issue number")
+    p_unlock_issue.set_defaults(func=unlock_issue)
 
     return parser
 
