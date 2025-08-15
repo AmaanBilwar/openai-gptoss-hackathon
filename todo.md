@@ -33,6 +33,7 @@
 
 
 ## priority:
+- Go fucking Crazy on X!
 - push
 - new branch 
 - merge
@@ -59,7 +60,7 @@
 
         - [x] new branch (vishesh)  
         - [x] make branch (vishesh)
-        - [ ] switch branches (vishesh)
+        - [x] switch branches (vishesh)
         - [ ] push (amaan + vishesh)
 
     - tool calling logic : Amaan
