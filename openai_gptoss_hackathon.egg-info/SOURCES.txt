@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+cli/chat.py
+cli/main.py
+openai_gptoss_hackathon.egg-info/PKG-INFO
+openai_gptoss_hackathon.egg-info/SOURCES.txt
+openai_gptoss_hackathon.egg-info/dependency_links.txt
+openai_gptoss_hackathon.egg-info/entry_points.txt
+openai_gptoss_hackathon.egg-info/requires.txt
+openai_gptoss_hackathon.egg-info/top_level.txt
