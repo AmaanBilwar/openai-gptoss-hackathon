@@ -9,10 +9,10 @@
 - connect cli tool for function calling
 
 - basic actions:
-    1. push
-    2. new branch 
-    3. merge
-    4. make pr
+    1. [ ] push
+    2. [x] new branch 
+    3. [x] merge
+    4. [x] make pr
     5. rebase
     6. git diff
 
