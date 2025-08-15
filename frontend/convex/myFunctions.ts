@@ -1,78 +1,66 @@
 import { v } from "convex/values";
-import { query, mutation, action } from "./_generated/server";
-import { api } from "./_generated/api";
+import { query, mutation } from "./_generated/server";
 
-// Write your Convex functions in any file inside this directory (`convex`).
-// See https://docs.convex.dev/functions for more.
-
-// You can read data from the database via a query:
-export const listNumbers = query({
-  // Validators for arguments.
-  args: {
-    count: v.number(),
-  },
-
-  // Query implementation.
+// Get current user profile
+export const getCurrentUser = query({
+  args: {},
+  returns: v.union(
+    v.object({
+      _id: v.id("users"),
+      userId: v.string(),
+      name: v.string(),
+      email: v.string(),
+      avatar: v.optional(v.string()),
+      _creationTime: v.number(),
+    }),
+    v.null()
+  ),
   handler: async (ctx, args) => {
-    //// Read the database as many times as you need here.
-    //// See https://docs.convex.dev/database/reading-data.
-    const numbers = await ctx.db
-      .query("numbers")
-      // Ordered by _creationTime, return most recent
-      .order("desc")
-      .take(args.count);
-    return {
-      viewer: (await ctx.auth.getUserIdentity())?.name ?? null,
-      numbers: numbers.reverse().map((number) => number.value),
-    };
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
+      .unique();
+
+    return user;
   },
 });
 
-// You can write data to the database via a mutation:
-export const addNumber = mutation({
-  // Validators for arguments.
+// Create or update user profile
+export const upsertUser = mutation({
   args: {
-    value: v.number(),
+    name: v.string(),
+    email: v.string(),
+    avatar: v.optional(v.string()),
   },
-
-  // Mutation implementation.
+  returns: v.id("users"),
   handler: async (ctx, args) => {
-    //// Insert or modify documents in the database here.
-    //// Mutations can also read from the database like queries.
-    //// See https://docs.convex.dev/database/writing-data.
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
 
-    const id = await ctx.db.insert("numbers", { value: args.value });
+    const existingUser = await ctx.db
+      .query("users")
+      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
+      .unique();
 
-    console.log("Added new document with id:", id);
-    // Optionally, return a value from your mutation.
-    // return id;
-  },
-});
-
-// You can fetch data from and send data to third-party APIs via an action:
-export const myAction = action({
-  // Validators for arguments.
-  args: {
-    first: v.number(),
-    second: v.string(),
-  },
-
-  // Action implementation.
-  handler: async (ctx, args) => {
-    //// Use the browser-like `fetch` API to send HTTP requests.
-    //// See https://docs.convex.dev/functions/actions#calling-third-party-apis-and-using-npm-packages.
-    // const response = await ctx.fetch("https://api.thirdpartyservice.com");
-    // const data = await response.json();
-
-    //// Query data by running Convex queries.
-    const data = await ctx.runQuery(api.myFunctions.listNumbers, {
-      count: 10,
-    });
-    console.log(data);
-
-    //// Write data by running Convex mutations.
-    await ctx.runMutation(api.myFunctions.addNumber, {
-      value: args.first,
-    });
+    if (existingUser) {
+      // Update existing user
+      await ctx.db.patch(existingUser._id, {
+        name: args.name,
+        email: args.email,
+        avatar: args.avatar,
+      });
+      return existingUser._id;
+    } else {
+      // Create new user
+      return await ctx.db.insert("users", {
+        userId: identity.subject,
+        name: args.name,
+        email: args.email,
+        avatar: args.avatar,
+      });
+    }
   },
 });

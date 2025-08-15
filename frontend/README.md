@@ -1,51 +1,106 @@
-# Welcome to your Convex + Next.js + Clerk app
+# My App
 
-This is a [Convex](https://convex.dev/) project created with [`npm create convex`](https://www.npmjs.com/package/create-convex).
+A simple web application built with Next.js, Convex, and Clerk authentication.
 
-After the initial setup (<2 minutes) you'll have a working full-stack app using:
+## Features
 
-- Convex as your backend (database, server logic)
-- [React](https://react.dev/) as your frontend (web page interactivity)
-- [Next.js](https://nextjs.org/) for optimized web hosting and page routing
-- [Tailwind](https://tailwindcss.com/) for building great looking accessible UI
-- [Clerk](https://clerk.com/) for authentication
+- 🔐 **GitHub Authentication** - Sign in with your GitHub account
+- 🗄️ **Convex Backend** - Real-time database with automatic sync
+- ⚡ **Next.js Frontend** - Fast, modern React framework
+- 🎨 **Tailwind CSS** - Beautiful, responsive design
 
-## Get started
+## Tech Stack
 
-If you just cloned this codebase and didn't use `npm create convex`, run:
+- **Frontend**: Next.js 15, React 19, Tailwind CSS
+- **Backend**: Convex (real-time database)
+- **Authentication**: Clerk
+- **Language**: TypeScript
+
+## Getting Started
+
+1. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+2. **Set up environment variables**:
+   Create a `.env.local` file with:
+   ```
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
+   CLERK_SECRET_KEY=your_clerk_secret_key
+   NEXT_PUBLIC_CONVEX_URL=your_convex_url
+   ```
+
+3. **Configure Clerk**:
+   - Go to [Clerk Dashboard](https://dashboard.clerk.com)
+   - Create a new application
+   - Add GitHub as an OAuth provider
+   - Copy your publishable key and secret key
+
+4. **Configure Convex**:
+   - Run `npx convex dev` to start the development server
+   - Follow the prompts to create a new Convex project
+   - Copy your Convex URL
+
+5. **Start the development server**:
+   ```bash
+   npm run dev
+   ```
+
+## Project Structure
 
 ```
-npm install
-npm run dev
+frontend/
+├── app/
+│   ├── page.tsx          # Main application page
+│   └── layout.tsx        # Root layout
+├── components/
+│   └── ConvexClientProvider.tsx  # Convex client setup
+├── convex/
+│   ├── myFunctions.ts    # Convex backend functions
+│   ├── schema.ts         # Database schema
+│   └── auth.config.ts    # Authentication configuration
+└── middleware.ts         # Clerk middleware
 ```
 
-If you're reading this README on GitHub and want to use this template, run:
+## Database Schema
 
+The application uses a simple schema with a `users` table to store user profiles:
+
+```typescript
+users: {
+  userId: string,      // Clerk user ID
+  name: string,        // User's full name
+  email: string,       // User's email
+  avatar?: string,     // User's avatar URL
+}
 ```
-npm create convex@latest -- -t nextjs-clerk
-```
 
-Then:
+## Authentication Flow
 
-1. Open your app. There should be a "Claim your application" button from Clerk in the bottom right of your app.
-2. Follow the steps to claim your application and link it to this app.
-3. Follow step 3 in the [Convex Clerk onboarding guide](https://docs.convex.dev/auth/clerk#get-started) to create a Convex JWT template.
-4. Uncomment the Clerk provider in `convex/auth.config.ts`
-5. Paste the Issuer URL as `CLERK_JWT_ISSUER_DOMAIN` to your dev deployment environment variable settings on the Convex dashboard (see [docs](https://docs.convex.dev/auth/clerk#configuring-dev-and-prod-instances))
+1. User clicks "Sign in with GitHub"
+2. Clerk handles OAuth flow with GitHub
+3. User is redirected back to the app
+4. User profile is automatically synced to Convex database
+5. User sees their profile information
 
-If you want to sync Clerk user data via webhooks, check out this [example repo](https://github.com/thomasballinger/convex-clerk-users-table/).
+## Development
 
-## Learn more
+- **Frontend**: Edit `app/page.tsx` to modify the UI
+- **Backend**: Edit `convex/myFunctions.ts` to add new functions
+- **Database**: Edit `convex/schema.ts` to modify the schema
 
-To learn more about developing your project with Convex, check out:
+## Deployment
 
-- The [Tour of Convex](https://docs.convex.dev/get-started) for a thorough introduction to Convex principles.
-- The rest of [Convex docs](https://docs.convex.dev/) to learn about all Convex features.
-- [Stack](https://stack.convex.dev/) for in-depth articles on advanced topics.
+1. Deploy to Vercel: `vercel --prod`
+2. Set up environment variables in your deployment platform
+3. Configure Clerk and Convex for production
 
-## Join the community
+## Next Steps
 
-Join thousands of developers building full-stack apps with Convex:
-
-- Join the [Convex Discord community](https://convex.dev/community) to get help in real-time.
-- Follow [Convex on GitHub](https://github.com/get-convex/), star and contribute to the open-source implementation of Convex.
+This is a clean foundation. You can now:
+- Add more database tables and functions
+- Create additional pages and components
+- Implement real-time features
+- Add more authentication providers
+- Build your specific application features
