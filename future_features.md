@@ -1,3 +1,4 @@
 - [ ] add fallback responses in the system prompt 
 - [ ] llm response caching
 - [ ] implement rate limits
+- [ ] expand to other git hosts as well (gitlab, bitbucket etc)
