@@ -20,4 +20,4 @@
 
 - resolve merge conflicts
 
-- intelligent commit splitting
+- intelligent commit + pr splitting
