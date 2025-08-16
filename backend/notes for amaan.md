@@ -8,6 +8,12 @@ we can add userId and container tags to seperate user memories in supermemory ai
 
 ## rough notes
 
+
+- whenever theres a commit + push, first run checks 
+    - these checks include a threshold counter with git diff
+    - 
+
+
 - [ ] get git diff first  
 - [ ] use git diff to see lines changed in commit or pr (diff hunks)
 - [ ] get metadata (filename, path, commit sha, author, timestamp, parent commit sha)
