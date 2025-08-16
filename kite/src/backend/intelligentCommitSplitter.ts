@@ -307,7 +307,7 @@ export class IntelligentCommitSplitter {
     // In a full implementation, you'd parse the semantic analysis results
     const commitGroups = this.groupChangesHeuristic(changes, semanticSummary);
 
-    return [commitGroups, semanticSummary];
+    return [commitGroups as unknown as CommitGroup[], semanticSummary];
   }
 
   /**
