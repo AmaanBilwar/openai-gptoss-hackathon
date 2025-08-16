@@ -973,8 +973,9 @@ Instructions:
                     for file in files:
                         subprocess.run(['git', 'add', file], check=True)
                 else:
-                    # Stage all changes including new files
-                    subprocess.run(['git', 'add', '.'], check=True)
+                    # Stage all changes including new files and deletions
+                    # Use git add -A to stage all changes (additions, modifications, and deletions)
+                    subprocess.run(['git', 'add', '-A'], check=True)
                 
                 # Create commit
                 subprocess.run(['git', 'commit', '-m', commit_message], check=True)
