@@ -30,6 +30,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "cerebras-cloud-sdk" },
+    { name = "httpx" },
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "supermemory" },
@@ -38,9 +39,10 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cerebras-cloud-sdk", specifier = ">=0.1.0" },
+    { name = "httpx", specifier = ">=0.24.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "requests", specifier = ">=2.32.4" },
-    { name = "supermemory", specifier = ">=3.0.0a24" },
+    { name = "supermemory", specifier = "==3.0.0a25" },
 ]
 
 [[package]]
@@ -233,7 +235,7 @@ wheels = [
 
 [[package]]
 name = "supermemory"
-version = "3.0.0a24"
+version = "3.0.0a25"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -243,9 +245,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/08/76/f35a4bc6b8247252423bd673df35360fb2996f7dcf70b0a69b7513be5856/supermemory-3.0.0a24.tar.gz", hash = "sha256:78d2cb3ecb064fb7c3eaa74320f7bbb93a9b1db6c042c66ef6bed14f8ef82219", size = 107261 }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/61/c154b4e689bc83067c7e60674ddeabd26c6ce1daca3d47d370dc2f640fde/supermemory-3.0.0a25.tar.gz", hash = "sha256:6dd3d05f9c84b5df1794a0030b8486fa503968cecff64a95650421f84d28322d", size = 107378 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/58/a6/9f79568592f23417c1b753844d227eeaa83428003db9e3ee11e6012ce388/supermemory-3.0.0a24-py3-none-any.whl", hash = "sha256:828c91bc51eb175a8bb760eb478a358b94a09dd1cef7f338ab05301c3bdda68e", size = 94661 },
+    { url = "https://files.pythonhosted.org/packages/73/74/e616dc61e42a51a1a61e4aa91f0477cf3a863bfc8c2102f3a75f319ca823/supermemory-3.0.0a25-py3-none-any.whl", hash = "sha256:fa1713539c76967e39cb3a9c3a3e8337738dc848035aa7bcc7d610b43d4860ad", size = 94699 },
 ]
 
 [[package]]
