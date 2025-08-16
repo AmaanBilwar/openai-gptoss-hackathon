@@ -65,6 +65,9 @@ export interface ToolParameter {
   type: string;
   description?: string;
   enum?: string[];
+  items?: {
+    type: string;
+  };
 }
 
 export interface ToolDefinition {
@@ -236,4 +239,48 @@ export interface CerebrasStreamingChunk {
       tool_calls?: CerebrasToolCall[];
     };
   }>;
+}
+
+// Intelligent Commit Splitting Types
+export interface FileChange {
+  file_path: string;
+  change_type: 'added' | 'modified' | 'deleted';
+  before_content?: string;
+  after_content?: string;
+  diff_content: string;
+  total_lines_added: number;
+  total_lines_removed: number;
+}
+
+export interface CommitGroup {
+  feature_name: string;
+  description: string;
+  files: FileChange[];
+  commit_title: string;
+  commit_message: string;
+}
+
+export interface SupermemoryMemory {
+  id: string;
+  status: string;
+}
+
+export interface SupermemorySearchResult {
+  results: any[];
+  summary?: string;
+}
+
+export interface SupermemoryClient {
+  addMemory(content: string, metadata?: Record<string, any>, containerTags?: string[]): Promise<SupermemoryMemory>;
+  searchMemories(query: string, limit?: number, filters?: Record<string, any>, includeSummary?: boolean): Promise<SupermemorySearchResult>;
+  deleteMemory(memoryId: string): Promise<boolean>;
+  deleteMemoriesBatch(memoryIds: string[]): Promise<number>;
+}
+
+export interface CerebrasLLM {
+  generateCommitMessage(fileChanges: FileChange[], featureName: string, semanticSummary?: string): Promise<{ title: string; message: string }>;
+}
+
+export interface IntelligentCommitSplitter {
+  runIntelligentSplitting(autoPush?: boolean): Promise<CommitGroup[]>;
 }

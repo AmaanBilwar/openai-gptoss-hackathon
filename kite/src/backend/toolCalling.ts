@@ -1,5 +1,6 @@
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { GitHubClient } from './githubClient';
+import { IntelligentCommitSplitter } from './intelligentCommitSplitter';
 import {
   ChatMessage,
   ToolDefinition,
@@ -253,6 +254,74 @@ export class GPTOSSToolCaller {
             required: ['repo', 'pull_number']
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'intelligent_commit_split',
+          description: 'Intelligently split uncommitted changes into logical commits using AI analysis. This tool analyzes file changes semantically and groups them into meaningful commits with proper conventional commit messages.',
+          parameters: {
+            type: 'object',
+            properties: {
+              auto_push: {
+                type: 'boolean',
+                description: 'Whether to automatically push the commits after splitting (default: false)'
+              },
+              dry_run: {
+                type: 'boolean',
+                description: 'Whether to only analyze and show what would be done without actually creating commits (default: false)'
+              }
+            },
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'commit_and_push',
+          description: 'Commit and push changes to GitHub with automatic threshold checking. If changes exceed 1000 lines, automatically triggers intelligent commit splitting. For smaller changes, creates a regular commit with user-provided message.',
+          parameters: {
+            type: 'object',
+            properties: {
+              commit_message: {
+                type: 'string',
+                description: 'The commit message to use (required for regular commits)'
+              },
+              files: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'List of specific files to commit (optional, commits all changes if not specified)'
+              },
+              auto_push: {
+                type: 'boolean',
+                description: 'Whether to automatically push to remote after commit (default: true)'
+              },
+              force_intelligent_split: {
+                type: 'boolean',
+                description: 'Force intelligent commit splitting even for small changes (default: false)'
+              }
+            },
+            required: ['commit_message']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'check_changes_threshold',
+          description: 'Check if uncommitted changes exceed the threshold (1000 lines) and return analysis of changes.',
+          parameters: {
+            type: 'object',
+            properties: {
+              threshold: {
+                type: 'integer',
+                description: 'Line threshold to check against (default: 1000)'
+              }
+            },
+            required: []
+          }
+        }
       }
     ];
   }
@@ -289,6 +358,8 @@ Instructions:
     3. Automated workflow optimization for team productivity
     4. Smart commit message generation following conventional commits
     5. Learning from team patterns to improve suggestions
+    6. Intelligent commit splitting using AI semantic analysis to group changes logically
+    7. Automatic threshold-based commit management (triggers intelligent splitting for changes >1000 lines)
 
     RESPONSE FORMAT:
     - Provide structured JSON for complex analysis
@@ -371,6 +442,15 @@ Instructions:
           commitMessage: parameters['commit_message'],
           mergeMethod: parameters['merge_method']
         });
+      
+      case 'intelligent_commit_split':
+        return await this.executeIntelligentCommitSplit(parameters);
+      
+      case 'commit_and_push':
+        return await this.executeCommitAndPush(parameters);
+      
+      case 'check_changes_threshold':
+        return await this.executeCheckChangesThreshold(parameters);
       
       default:
         return {
@@ -548,6 +628,303 @@ Instructions:
     } catch (error) {
       yield `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
+  }
+
+  /**
+   * Execute intelligent commit splitting
+   */
+  private async executeIntelligentCommitSplit(parameters: Record<string, any>): Promise<ToolResult> {
+    try {
+      const supermemoryApiKey = process.env.SUPERMEMORY_API_KEY;
+      const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
+      
+      if (!supermemoryApiKey) {
+        return {
+          success: false,
+          error: 'SUPERMEMORY_API_KEY environment variable not set',
+          suggestion: 'Please set the SUPERMEMORY_API_KEY environment variable to use intelligent commit splitting'
+        };
+      }
+      
+      if (!cerebrasApiKey) {
+        return {
+          success: false,
+          error: 'CEREBRAS_API_KEY environment variable not set',
+          suggestion: 'Please set the CEREBRAS_API_KEY environment variable to use intelligent commit splitting'
+        };
+      }
+      
+      // Initialize the intelligent commit splitter
+      const splitter = new IntelligentCommitSplitter(supermemoryApiKey, cerebrasApiKey);
+      
+      const autoPush = parameters.auto_push || false;
+      const dryRun = parameters.dry_run || false;
+      
+      // Run the analysis
+      if (dryRun) {
+        // For dry run, we'll just analyze without executing
+        const commitGroups = await splitter.runIntelligentSplitting(false);
+        return {
+          success: true,
+          dry_run: true,
+          commit_groups_count: commitGroups.length,
+          commit_groups: commitGroups.map(group => ({
+            feature_name: group.feature_name,
+            commit_title: group.commit_title,
+            commit_message: group.commit_message,
+            files: group.files.map(f => f.file_path)
+          })),
+          message: `Analysis complete! Found ${commitGroups.length} logical commit groups. No commits were created (dry run mode).`
+        };
+      } else {
+        // Execute the actual commit splitting
+        const commitGroups = await splitter.runIntelligentSplitting(autoPush);
+        return {
+          success: true,
+          dry_run: false,
+          auto_push: autoPush,
+          commit_groups_count: commitGroups.length,
+          commit_groups: commitGroups.map(group => ({
+            feature_name: group.feature_name,
+            commit_title: group.commit_title,
+            commit_message: group.commit_message,
+            files: group.files.map(f => f.file_path)
+          })),
+          message: `Successfully created ${commitGroups.length} logical commits${autoPush ? ' and pushed to remote' : ''}.`
+        };
+      }
+      
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        suggestion: 'Check that you have uncommitted changes and that the repository is in a valid state'
+      };
+    }
+  }
+
+  /**
+   * Execute commit and push with threshold checking
+   */
+  private async executeCommitAndPush(parameters: Record<string, any>): Promise<ToolResult> {
+    try {
+      const commitMessage = parameters.commit_message;
+      const files = parameters.files || null;
+      const autoPush = parameters.auto_push !== false; // default to true
+      const forceIntelligentSplit = parameters.force_intelligent_split || false;
+      
+      // First check if there are any changes
+      const { stdout: statusOutput } = await this.execAsync('git status --porcelain');
+      
+      if (!statusOutput.trim()) {
+        return {
+          success: false,
+          error: 'No changes to commit',
+          suggestion: 'Make some changes to files before committing'
+        };
+      }
+      
+      // Check threshold unless forced to use intelligent split
+      if (!forceIntelligentSplit) {
+        const thresholdCheck = await this.executeCheckChangesThreshold({ threshold: 1000 });
+        
+        if (!thresholdCheck.success) {
+          return thresholdCheck;
+        }
+        
+        // If exceeds threshold, trigger intelligent commit split
+        if (thresholdCheck.exceeds_threshold) {
+          return {
+            success: true,
+            action: 'intelligent_split_triggered',
+            reason: `Changes exceed threshold (${thresholdCheck.total_changes} lines > 1000)`,
+            threshold_analysis: thresholdCheck,
+            message: `Large changes detected (${thresholdCheck.total_changes} lines). Automatically triggering intelligent commit splitting for better organization.`,
+            next_step: 'intelligent_commit_split'
+          };
+        }
+      }
+      
+      // For smaller changes or forced intelligent split, proceed with regular commit
+      try {
+        // Stage files if specified, otherwise stage all changes
+        if (files) {
+          for (const file of files) {
+            await this.execAsync(`git add ${file}`);
+          }
+        } else {
+          // Stage all changes including new files and deletions
+          await this.execAsync('git add -A');
+        }
+        
+        // Create commit
+        await this.execAsync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
+        
+        // Push if requested
+        let pushOutput = null;
+        if (autoPush) {
+          const { stdout } = await this.execAsync('git push');
+          pushOutput = stdout;
+        }
+        
+        return {
+          success: true,
+          action: 'regular_commit',
+          commit_message: commitMessage,
+          files_committed: files || 'all changes',
+          pushed: autoPush,
+          push_output: pushOutput,
+          message: `Successfully committed changes with message: '${commitMessage}'`
+        };
+        
+      } catch (error) {
+        return {
+          success: false,
+          error: `Git operation failed: ${error}`,
+          suggestion: 'Check your git configuration and repository state'
+        };
+      }
+      
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        suggestion: 'Check that you have uncommitted changes and that the repository is in a valid state'
+      };
+    }
+  }
+
+  /**
+   * Check if uncommitted changes exceed the threshold
+   */
+  private async executeCheckChangesThreshold(parameters: Record<string, any>): Promise<ToolResult> {
+    try {
+      const threshold = parameters.threshold || 1000;
+      
+      // Get git diff statistics for modified/deleted files
+      const { stdout: diffOutput } = await this.execAsync('git diff --stat');
+      
+      // Check staged changes
+      const { stdout: stagedOutput } = await this.execAsync('git diff --cached --stat');
+      
+      // Get untracked (new) files
+      const { stdout: untrackedOutput } = await this.execAsync('git ls-files --others --exclude-standard');
+      
+      // Parse the diff output to count lines
+      let totalLinesAdded = 0;
+      let totalLinesRemoved = 0;
+      const changedFiles: any[] = [];
+      
+      // Parse regular diff (modified/deleted files)
+      for (const line of diffOutput.split('\n')) {
+        if (line.includes('|') && line.includes('changed')) {
+          // Format: "file.py | 10 +++++-----"
+          const parts = line.split('|');
+          if (parts.length >= 2) {
+            const fileName = parts[0].trim();
+            const stats = parts[1].trim();
+            // Extract numbers from stats like "10 +++++-----"
+            const numbers = stats.match(/\d+/g);
+            if (numbers && numbers.length >= 2) {
+              const linesAdded = parseInt(numbers[0]);
+              const linesRemoved = parseInt(numbers[1]);
+              totalLinesAdded += linesAdded;
+              totalLinesRemoved += linesRemoved;
+              changedFiles.push({
+                file: fileName,
+                lines_added: linesAdded,
+                lines_removed: linesRemoved,
+                type: 'modified'
+              });
+            }
+          }
+        }
+      }
+      
+      // Parse staged diff
+      for (const line of stagedOutput.split('\n')) {
+        if (line.includes('|') && line.includes('changed')) {
+          const parts = line.split('|');
+          if (parts.length >= 2) {
+            const fileName = parts[0].trim();
+            const stats = parts[1].trim();
+            const numbers = stats.match(/\d+/g);
+            if (numbers && numbers.length >= 2) {
+              const linesAdded = parseInt(numbers[0]);
+              const linesRemoved = parseInt(numbers[1]);
+              totalLinesAdded += linesAdded;
+              totalLinesRemoved += linesRemoved;
+              changedFiles.push({
+                file: fileName,
+                lines_added: linesAdded,
+                lines_removed: linesRemoved,
+                type: 'staged'
+              });
+            }
+          }
+        }
+      }
+      
+      // Handle untracked (new) files
+      const untrackedFiles = untrackedOutput.split('\n').filter(line => line.trim());
+      for (const filePath of untrackedFiles) {
+        try {
+          // Count lines in the new file
+          const { stdout: content } = await this.execAsync(`cat ${filePath}`);
+          const linesAdded = content.split('\n').length;
+          totalLinesAdded += linesAdded;
+          changedFiles.push({
+            file: filePath,
+            lines_added: linesAdded,
+            lines_removed: 0,
+            type: 'new'
+          });
+        } catch (error) {
+          // If we can't read the file, count it as 1 line addition
+          totalLinesAdded += 1;
+          changedFiles.push({
+            file: filePath,
+            lines_added: 1,
+            lines_removed: 0,
+            type: 'new'
+          });
+        }
+      }
+      
+      const totalChanges = totalLinesAdded + totalLinesRemoved;
+      const exceedsThreshold = totalChanges > threshold;
+      
+      return {
+        success: true,
+        total_lines_added: totalLinesAdded,
+        total_lines_removed: totalLinesRemoved,
+        total_changes: totalChanges,
+        threshold: threshold,
+        exceeds_threshold: exceedsThreshold,
+        changed_files: changedFiles,
+        file_count: changedFiles.length,
+        new_files_count: changedFiles.filter(f => f.type === 'new').length,
+        modified_files_count: changedFiles.filter(f => ['modified', 'staged'].includes(f.type)).length,
+        recommendation: exceedsThreshold ? 'intelligent_commit_split' : 'regular_commit'
+      };
+      
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        suggestion: 'Check that you have uncommitted changes and that the repository is in a valid state'
+      };
+    }
+  }
+
+  /**
+   * Helper method to execute shell commands
+   */
+  private async execAsync(command: string): Promise<{ stdout: string; stderr: string }> {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+    return await execAsync(command);
   }
 
   /**
