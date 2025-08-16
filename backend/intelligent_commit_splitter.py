@@ -64,6 +64,27 @@ class SupermemoryClient:
         except Exception as e:
             print(f"Error searching memories in Supermemory: {e}")
             return {"error": str(e)}
+    
+    def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory by ID using the SDK"""
+        try:
+            self.client.memories.delete(id=memory_id)
+            return True
+        except Exception as e:
+            print(f"Error deleting memory {memory_id} from Supermemory: {e}")
+            return False
+    
+    def delete_memories_batch(self, memory_ids: List[str]) -> int:
+        """Delete multiple memories by their IDs"""
+        print(f"🗑️  Cleaning up {len(memory_ids)} memories from Supermemory...")
+        
+        deleted_count = 0
+        for memory_id in memory_ids:
+            if self.delete_memory(memory_id):
+                deleted_count += 1
+        
+        print(f"✅ Successfully deleted {deleted_count}/{len(memory_ids)} memories")
+        return deleted_count
 
 
 class CerebrasLLM:
@@ -297,14 +318,16 @@ class IntelligentCommitSplitter:
         
         return changes
     
-    def upload_to_supermemory(self, changes: List[FileChange]) -> None:
+    def upload_to_supermemory(self, changes: List[FileChange]) -> List[str]:
         """Upload before/after file contents to Supermemory for semantic analysis"""
         print("📤 Uploading file contents to Supermemory for semantic analysis...")
+        
+        memory_ids = []
         
         for change in changes:
             # Upload before content if it exists
             if change.before_content:
-                self.supermemory.add_memory(
+                response = self.supermemory.add_memory(
                     content=change.before_content,
                     metadata={
                         "file_path": change.file_path,
@@ -314,10 +337,12 @@ class IntelligentCommitSplitter:
                     },
                     container_tags=[self.session_id, "before"]
                 )
+                if "id" in response:
+                    memory_ids.append(response["id"])
             
             # Upload after content if it exists
             if change.after_content:
-                self.supermemory.add_memory(
+                response = self.supermemory.add_memory(
                     content=change.after_content,
                     metadata={
                         "file_path": change.file_path,
@@ -327,10 +352,12 @@ class IntelligentCommitSplitter:
                     },
                     container_tags=[self.session_id, "after"]
                 )
+                if "id" in response:
+                    memory_ids.append(response["id"])
             
             # Upload diff content
             if change.diff_content:
-                self.supermemory.add_memory(
+                response = self.supermemory.add_memory(
                     content=change.diff_content,
                     metadata={
                         "file_path": change.file_path,
@@ -342,6 +369,10 @@ class IntelligentCommitSplitter:
                     },
                     container_tags=[self.session_id, "diff"]
                 )
+                if "id" in response:
+                    memory_ids.append(response["id"])
+        
+        return memory_ids
     
     def analyze_semantic_relationships(self, changes: List[FileChange]) -> List[CommitGroup]:
         """Use Supermemory to analyze semantic relationships and group changes"""
@@ -557,26 +588,38 @@ class IntelligentCommitSplitter:
         
         # Step 2: Upload to Supermemory for semantic analysis
         print("📤 Step 2: Uploading to Supermemory for semantic analysis...")
-        self.upload_to_supermemory(changes)
+        memory_ids = self.upload_to_supermemory(changes)
         
-        # Step 3: Analyze semantic relationships
-        print("🔍 Step 3: Analyzing semantic relationships...")
-        commit_groups = self.analyze_semantic_relationships(changes)
-        print(f"Identified {len(commit_groups)} logical commit groups")
-        
-        # Step 4: Display results
-        print("\n📋 Commit Groups Identified:")
-        for i, group in enumerate(commit_groups, 1):
-            print(f"\n{i}. {group.feature_name}")
-            print(f"   Title: {group.commit_title}")
-            print(f"   Description: {group.commit_message}")
-            print(f"   Files: {[f.file_path for f in group.files]}")
-        
-        # Step 5: Execute if requested
-        if auto_push:
-            self.execute_commit_splitting(commit_groups, auto_push=auto_push)
-        
-        return commit_groups
+        try:
+            # Step 3: Analyze semantic relationships
+            print("🔍 Step 3: Analyzing semantic relationships...")
+            commit_groups = self.analyze_semantic_relationships(changes)
+            print(f"Identified {len(commit_groups)} logical commit groups")
+            
+            # Step 4: Display results
+            print("\n📋 Commit Groups Identified:")
+            for i, group in enumerate(commit_groups, 1):
+                print(f"\n{i}. {group.feature_name}")
+                print(f"   Title: {group.commit_title}")
+                print(f"   Description: {group.commit_message}")
+                print(f"   Files: {[f.file_path for f in group.files]}")
+            
+            # Step 5: Clean up memories after analysis and LLM generation
+            if memory_ids:
+                self.supermemory.delete_memories_batch(memory_ids)
+            
+            # Step 6: Execute if requested
+            if auto_push:
+                self.execute_commit_splitting(commit_groups, auto_push=auto_push)
+            
+            return commit_groups
+            
+        except Exception as e:
+            print(f"❌ Error during analysis: {e}")
+            # Clean up memories even if analysis fails
+            if memory_ids:
+                self.supermemory.delete_memories_batch(memory_ids)
+            raise
 
 
 def main():
