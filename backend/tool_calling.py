@@ -4,6 +4,8 @@ from typing import List, Dict, Any, Optional
 from cerebras.cloud.sdk import Cerebras
 import requests
 from main import TokenStore
+from intelligent_commit_splitter import IntelligentCommitSplitter
+import os
 
 class GPTOSSToolCaller:
     def __init__(self, model_id: str = "gpt-oss-120b"):
@@ -42,6 +44,8 @@ Instructions:
     3. Automated workflow optimization for team productivity
     4. Smart commit message generation following conventional commits
     5. Learning from team patterns to improve suggestions
+    6. Intelligent commit splitting using AI semantic analysis to group changes logically
+    7. Automatic threshold-based commit management (triggers intelligent splitting for changes >1000 lines)
 
     RESPONSE FORMAT:
     - Provide structured JSON for complex analysis
@@ -275,6 +279,74 @@ Instructions:
                         "required": ["repo", "pull_number"],
                     },
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "intelligent_commit_split",
+                    "description": "Intelligently split uncommitted changes into logical commits using AI analysis. This tool analyzes file changes semantically and groups them into meaningful commits with proper conventional commit messages.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "auto_push": {
+                                "type": "boolean",
+                                "description": "Whether to automatically push the commits after splitting (default: false)",
+                            },
+                            "dry_run": {
+                                "type": "boolean",
+                                "description": "Whether to only analyze and show what would be done without actually creating commits (default: false)",
+                            },
+                        },
+                        "required": [],
+                    },
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "commit_and_push",
+                    "description": "Commit and push changes to GitHub with automatic threshold checking. If changes exceed 1000 lines, automatically triggers intelligent commit splitting. For smaller changes, creates a regular commit with user-provided message.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "commit_message": {
+                                "type": "string",
+                                "description": "The commit message to use (required for regular commits)",
+                            },
+                            "files": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "List of specific files to commit (optional, commits all changes if not specified)",
+                            },
+                            "auto_push": {
+                                "type": "boolean",
+                                "description": "Whether to automatically push to remote after commit (default: true)",
+                            },
+                            "force_intelligent_split": {
+                                "type": "boolean",
+                                "description": "Force intelligent commit splitting even for small changes (default: false)",
+                            },
+                        },
+                        "required": ["commit_message"],
+                    },
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_changes_threshold",
+                    "description": "Check if uncommitted changes exceed the threshold (1000 lines) and return analysis of changes.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "threshold": {
+                                "type": "integer",
+                                "description": "Line threshold to check against (default: 1000)",
+                            },
+                        },
+                        "required": [],
+                    },
+                }
             }
         ]
         
@@ -290,6 +362,9 @@ Instructions:
             "get_issue": self._get_issue_implementation,
             "update_issue": self._update_issue_implementation,
             "merge_pr": self._merge_pr_implementation,
+            "intelligent_commit_split": self._intelligent_commit_split_implementation,
+            "commit_and_push": self._commit_and_push_implementation,
+            "check_changes_threshold": self._check_changes_threshold_implementation,
         }
 
 
@@ -642,6 +717,309 @@ Instructions:
                 "error": str(e),
                 "repo": repo,
                 "pull_number": pull_number
+            }
+
+    def _intelligent_commit_split_implementation(self, auto_push: bool = False, dry_run: bool = False) -> Dict[str, Any]:
+        """Implementation of intelligent_commit_split function using the IntelligentCommitSplitter."""
+        try:
+            # Get API keys from environment
+            supermemory_api_key = os.getenv("SUPERMEMORY_API_KEY")
+            cerebras_api_key = os.getenv("CEREBRAS_API_KEY")
+            
+            if not supermemory_api_key:
+                return {
+                    "success": False,
+                    "error": "SUPERMEMORY_API_KEY environment variable not set",
+                    "suggestion": "Please set the SUPERMEMORY_API_KEY environment variable to use intelligent commit splitting"
+                }
+            
+            if not cerebras_api_key:
+                return {
+                    "success": False,
+                    "error": "CEREBRAS_API_KEY environment variable not set",
+                    "suggestion": "Please set the CEREBRAS_API_KEY environment variable to use intelligent commit splitting"
+                }
+            
+            # Initialize the intelligent commit splitter
+            splitter = IntelligentCommitSplitter(supermemory_api_key, cerebras_api_key)
+            
+            # Run the analysis
+            if dry_run:
+                # For dry run, we'll just analyze without executing
+                commit_groups = splitter.run_intelligent_splitting(auto_push=False)
+                return {
+                    "success": True,
+                    "dry_run": True,
+                    "commit_groups_count": len(commit_groups),
+                    "commit_groups": [
+                        {
+                            "feature_name": group.feature_name,
+                            "commit_title": group.commit_title,
+                            "commit_message": group.commit_message,
+                            "files": [f.file_path for f in group.files]
+                        }
+                        for group in commit_groups
+                    ],
+                    "message": f"Analysis complete! Found {len(commit_groups)} logical commit groups. No commits were created (dry run mode)."
+                }
+            else:
+                # Execute the actual commit splitting
+                commit_groups = splitter.run_intelligent_splitting(auto_push=auto_push)
+                return {
+                    "success": True,
+                    "dry_run": False,
+                    "auto_push": auto_push,
+                    "commit_groups_count": len(commit_groups),
+                    "commit_groups": [
+                        {
+                            "feature_name": group.feature_name,
+                            "commit_title": group.commit_title,
+                            "commit_message": group.commit_message,
+                            "files": [f.file_path for f in group.files]
+                        }
+                        for group in commit_groups
+                    ],
+                    "message": f"Successfully created {len(commit_groups)} logical commits{' and pushed to remote' if auto_push else ''}."
+                }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "suggestion": "Check that you have uncommitted changes and that the repository is in a valid state"
+            }
+
+    def _check_changes_threshold_implementation(self, threshold: int = 1000) -> Dict[str, Any]:
+        """Check if uncommitted changes exceed the threshold and return analysis."""
+        try:
+            import subprocess
+            
+            # Get git diff statistics for modified/deleted files
+            result = subprocess.run(
+                ['git', 'diff', '--stat'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            )
+            
+            # Check staged changes
+            staged_result = subprocess.run(
+                ['git', 'diff', '--cached', '--stat'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            )
+            
+            # Get untracked (new) files
+            untracked_result = subprocess.run(
+                ['git', 'ls-files', '--others', '--exclude-standard'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            )
+            
+            # Parse the diff output to count lines
+            total_lines_added = 0
+            total_lines_removed = 0
+            changed_files = []
+            
+            # Parse regular diff (modified/deleted files)
+            for line in result.stdout.split('\n'):
+                if '|' in line and 'changed' in line:
+                    # Format: "file.py | 10 +++++-----"
+                    parts = line.split('|')
+                    if len(parts) >= 2:
+                        file_name = parts[0].strip()
+                        stats = parts[1].strip()
+                        # Extract numbers from stats like "10 +++++-----"
+                        numbers = re.findall(r'\d+', stats)
+                        if len(numbers) >= 2:
+                            lines_added = int(numbers[0])
+                            lines_removed = int(numbers[1])
+                            total_lines_added += lines_added
+                            total_lines_removed += lines_removed
+                            changed_files.append({
+                                "file": file_name,
+                                "lines_added": lines_added,
+                                "lines_removed": lines_removed,
+                                "type": "modified"
+                            })
+            
+            # Parse staged diff
+            for line in staged_result.stdout.split('\n'):
+                if '|' in line and 'changed' in line:
+                    parts = line.split('|')
+                    if len(parts) >= 2:
+                        file_name = parts[0].strip()
+                        stats = parts[1].strip()
+                        numbers = re.findall(r'\d+', stats)
+                        if len(numbers) >= 2:
+                            lines_added = int(numbers[0])
+                            lines_removed = int(numbers[1])
+                            total_lines_added += lines_added
+                            total_lines_removed += lines_removed
+                            changed_files.append({
+                                "file": file_name,
+                                "lines_added": lines_added,
+                                "lines_removed": lines_removed,
+                                "type": "staged"
+                            })
+            
+            # Handle untracked (new) files
+            untracked_files = [line.strip() for line in untracked_result.stdout.split('\n') if line.strip()]
+            for file_path in untracked_files:
+                try:
+                    # Count lines in the new file
+                    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                        content = f.read()
+                        lines_added = len(content.split('\n'))
+                        total_lines_added += lines_added
+                        changed_files.append({
+                            "file": file_path,
+                            "lines_added": lines_added,
+                            "lines_removed": 0,
+                            "type": "new"
+                        })
+                except Exception as e:
+                    # If we can't read the file, count it as 1 line addition
+                    total_lines_added += 1
+                    changed_files.append({
+                        "file": file_path,
+                        "lines_added": 1,
+                        "lines_removed": 0,
+                        "type": "new"
+                    })
+            
+            total_changes = total_lines_added + total_lines_removed
+            exceeds_threshold = total_changes > threshold
+            
+            return {
+                "success": True,
+                "total_lines_added": total_lines_added,
+                "total_lines_removed": total_lines_removed,
+                "total_changes": total_changes,
+                "threshold": threshold,
+                "exceeds_threshold": exceeds_threshold,
+                "changed_files": changed_files,
+                "file_count": len(changed_files),
+                "new_files_count": len([f for f in changed_files if f.get("type") == "new"]),
+                "modified_files_count": len([f for f in changed_files if f.get("type") in ["modified", "staged"]]),
+                "recommendation": "intelligent_commit_split" if exceeds_threshold else "regular_commit"
+            }
+            
+        except subprocess.CalledProcessError as e:
+            return {
+                "success": False,
+                "error": f"Git command failed: {e}",
+                "suggestion": "Make sure you're in a git repository with changes"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "suggestion": "Check that you have uncommitted changes and that the repository is in a valid state"
+            }
+
+    def _commit_and_push_implementation(self, commit_message: str, files: List[str] = None, auto_push: bool = True, force_intelligent_split: bool = False) -> Dict[str, Any]:
+        """Commit and push changes with automatic threshold checking."""
+        try:
+            import subprocess
+            
+            # First check if there are any changes
+            status_result = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            )
+            
+            if not status_result.stdout.strip():
+                return {
+                    "success": False,
+                    "error": "No changes to commit",
+                    "suggestion": "Make some changes to files before committing"
+                }
+            
+            # Check threshold unless forced to use intelligent split
+            if not force_intelligent_split:
+                threshold_check = self._check_changes_threshold_implementation(threshold=1000)
+                
+                if not threshold_check["success"]:
+                    return threshold_check
+                
+                # If exceeds threshold, trigger intelligent commit split
+                if threshold_check["exceeds_threshold"]:
+                    return {
+                        "success": True,
+                        "action": "intelligent_split_triggered",
+                        "reason": f"Changes exceed threshold ({threshold_check['total_changes']} lines > 1000)",
+                        "threshold_analysis": threshold_check,
+                        "message": f"Large changes detected ({threshold_check['total_changes']} lines). Automatically triggering intelligent commit splitting for better organization.",
+                        "next_step": "intelligent_commit_split"
+                    }
+            
+            # For smaller changes or forced intelligent split, proceed with regular commit
+            try:
+                # Stage files if specified, otherwise stage all changes
+                if files:
+                    for file in files:
+                        subprocess.run(['git', 'add', file], check=True)
+                else:
+                    # Stage all changes including new files and deletions
+                    # Use git add -A to stage all changes (additions, modifications, and deletions)
+                    subprocess.run(['git', 'add', '-A'], check=True)
+                
+                # Create commit
+                subprocess.run(['git', 'commit', '-m', commit_message], check=True)
+                
+                # Push if requested
+                push_result = None
+                if auto_push:
+                    push_result = subprocess.run(
+                        ['git', 'push'],
+                        capture_output=True,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace',
+                        check=True
+                    )
+                
+                return {
+                    "success": True,
+                    "action": "regular_commit",
+                    "commit_message": commit_message,
+                    "files_committed": files if files else "all changes",
+                    "pushed": auto_push,
+                    "push_output": push_result.stdout if push_result else None,
+                    "message": f"Successfully committed changes with message: '{commit_message}'"
+                }
+                
+            except subprocess.CalledProcessError as e:
+                return {
+                    "success": False,
+                    "error": f"Git operation failed: {e}",
+                    "suggestion": "Check your git configuration and repository state"
+                }
+            
+        except subprocess.CalledProcessError as e:
+            return {
+                "success": False,
+                "error": f"Git status check failed: {e}",
+                "suggestion": "Make sure you're in a git repository"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "suggestion": "Check that you have uncommitted changes and that the repository is in a valid state"
             }
 
     def _extract_tool_call(self, response: str) -> Optional[Dict[str, Any]]:
