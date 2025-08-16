@@ -9,4 +9,5 @@ dependencies = [
     "requests>=2.32.4",
     "cerebras-cloud-sdk>=0.1.0",
     "supermemory>=3.0.0a24",
+    "httpx>=0.24.0",
 ]
