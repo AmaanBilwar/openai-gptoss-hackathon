@@ -48,17 +48,19 @@ class SupermemoryClient:
                 metadata=metadata or {},
                 container_tags=container_tags or []
             )
-            return response
+            # Convert response object to dict for easier handling
+            return {"id": response.id, "status": response.status}
         except Exception as e:
             print(f"Error adding memory to Supermemory: {e}")
             return {"error": str(e)}
     
-    def search_memories(self, query: str, limit: int = 10, filters: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Search memories in Supermemory using the SDK"""
+    def search_memories(self, query: str, limit: int = 10, filters: Dict[str, Any] = None, include_summary: bool = True) -> Dict[str, Any]:
+        """Search memories in Supermemory using the SDK with optional summary"""
         try:
             response = self.client.search.execute(
                 q=query,
-                limit=limit
+                limit=limit,
+                include_summary=include_summary
             )
             return response
         except Exception as e:
@@ -78,10 +80,18 @@ class SupermemoryClient:
         """Delete multiple memories by their IDs"""
         print(f"🗑️  Cleaning up {len(memory_ids)} memories from Supermemory...")
         
+        if not memory_ids:
+            print("⚠️  No memory IDs to delete")
+            return 0
+        
         deleted_count = 0
         for memory_id in memory_ids:
+            print(f"   🗑️  Deleting memory: {memory_id}")
             if self.delete_memory(memory_id):
                 deleted_count += 1
+                print(f"   ✅ Deleted: {memory_id}")
+            else:
+                print(f"   ❌ Failed to delete: {memory_id}")
         
         print(f"✅ Successfully deleted {deleted_count}/{len(memory_ids)} memories")
         return deleted_count
@@ -93,8 +103,8 @@ class CerebrasLLM:
     def __init__(self, api_key: str):
         self.client = Cerebras(api_key=api_key)
     
-    def generate_commit_message(self, file_changes: List[FileChange], feature_name: str) -> Tuple[str, str]:
-        """Generate commit title and message using LLM"""
+    def generate_commit_message(self, file_changes: List[FileChange], feature_name: str, semantic_summary: str = "") -> Tuple[str, str]:
+        """Generate commit title and message using LLM with semantic context"""
         
         # Prepare context for the LLM
         context = f"""
@@ -106,6 +116,13 @@ Files changed:
             if change.diff_content:
                 context += f"  Changes: {change.diff_content[:200]}...\n"
         
+        # Add semantic analysis if available
+        if semantic_summary:
+            context += f"""
+Semantic Analysis:
+{semantic_summary}
+"""
+        
         context += f"""
 Group: {feature_name}
 
@@ -115,6 +132,7 @@ MESSAGE: Your detailed message here explaining what was changed and why.
 
 Use conventional commit format (feat:, fix:, docs:, style:, refactor:, test:, chore:, perf:, ci:, build:)
 Focus on business value and user impact, not just technical details.
+Use the semantic analysis to understand the broader context and purpose of these changes.
 """
         
         try:
@@ -229,6 +247,26 @@ class IntelligentCommitSplitter:
             print(f"Error getting git diff files: {e}")
             return []
     
+    def get_git_root(self) -> str:
+        """Get the git repository root directory"""
+        try:
+            result = subprocess.run(
+                ['git', 'rev-parse', '--show-toplevel'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return os.getcwd()
+    
+    def resolve_file_path(self, file_path: str) -> str:
+        """Resolve file path to work from any directory"""
+        # Always use the full path from git root for git operations
+        return file_path
+    
     def get_file_content(self, file_path: str, commit_ref: str = "HEAD") -> Optional[str]:
         """Get file content at a specific commit"""
         try:
@@ -264,16 +302,26 @@ class IntelligentCommitSplitter:
     def determine_change_type(self, file_path: str) -> str:
         """Determine if file was added, modified, or deleted"""
         try:
-            # Check if file exists in working directory
-            if os.path.exists(file_path):
-                # Check if file exists in HEAD
-                head_content = self.get_file_content(file_path, "HEAD")
-                if head_content is None:
-                    return "added"
-                else:
-                    return "modified"
-            else:
+            # Check if file exists in working directory using git ls-files
+            result = subprocess.run(
+                ['git', 'ls-files', file_path],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=False
+            )
+            file_exists_in_git = result.returncode == 0 and result.stdout.strip()
+            
+            # Check if file exists in HEAD
+            head_content = self.get_file_content(file_path, "HEAD")
+            
+            if not file_exists_in_git and head_content is None:
+                return "added"
+            elif file_exists_in_git and head_content is None:
                 return "deleted"
+            else:
+                return "modified"
         except Exception:
             return "modified"
     
@@ -295,8 +343,21 @@ class IntelligentCommitSplitter:
             
             if change_type != "deleted":
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        after_content = f.read()
+                    # Try to read the file using git show for the current working tree
+                    result = subprocess.run(
+                        ['git', 'show', f':{file_path}'],
+                        capture_output=True,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace',
+                        check=False
+                    )
+                    if result.returncode == 0:
+                        after_content = result.stdout
+                    else:
+                        # Fallback to direct file reading if git show fails
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            after_content = f.read()
                 except Exception:
                     pass
             
@@ -307,7 +368,7 @@ class IntelligentCommitSplitter:
                                if line.startswith('-') and not line.startswith('---')])
             
             changes.append(FileChange(
-                file_path=file_path,
+                file_path=file_path,  # Keep original path for git operations
                 change_type=change_type,
                 before_content=before_content,
                 after_content=after_content,
@@ -327,6 +388,7 @@ class IntelligentCommitSplitter:
         for change in changes:
             # Upload before content if it exists
             if change.before_content:
+                print(f"   📤 Uploading before content for {change.file_path}")
                 response = self.supermemory.add_memory(
                     content=change.before_content,
                     metadata={
@@ -339,9 +401,13 @@ class IntelligentCommitSplitter:
                 )
                 if "id" in response:
                     memory_ids.append(response["id"])
+                    print(f"   ✅ Uploaded before content, ID: {response['id']}")
+                else:
+                    print(f"   ❌ Failed to upload before content: {response}")
             
             # Upload after content if it exists
             if change.after_content:
+                print(f"   📤 Uploading after content for {change.file_path}")
                 response = self.supermemory.add_memory(
                     content=change.after_content,
                     metadata={
@@ -354,9 +420,13 @@ class IntelligentCommitSplitter:
                 )
                 if "id" in response:
                     memory_ids.append(response["id"])
+                    print(f"   ✅ Uploaded after content, ID: {response['id']}")
+                else:
+                    print(f"   ❌ Failed to upload after content: {response}")
             
             # Upload diff content
             if change.diff_content:
+                print(f"   📤 Uploading diff content for {change.file_path}")
                 response = self.supermemory.add_memory(
                     content=change.diff_content,
                     metadata={
@@ -371,14 +441,17 @@ class IntelligentCommitSplitter:
                 )
                 if "id" in response:
                     memory_ids.append(response["id"])
+                    print(f"   ✅ Uploaded diff content, ID: {response['id']}")
+                else:
+                    print(f"   ❌ Failed to upload diff content: {response}")
         
         return memory_ids
     
-    def analyze_semantic_relationships(self, changes: List[FileChange]) -> List[CommitGroup]:
+    def analyze_semantic_relationships(self, changes: List[FileChange]) -> Tuple[List[CommitGroup], str]:
         """Use Supermemory to analyze semantic relationships and group changes"""
         print("🔍 Analyzing semantic relationships between changes...")
         
-        # Query Supermemory to understand feature relationships
+        # Query Supermemory to understand feature relationships with summaries
         queries = [
             "What changes implement the same feature?",
             "What is the logical separation between these changes?",
@@ -387,11 +460,14 @@ class IntelligentCommitSplitter:
         ]
         
         all_results = []
+        semantic_summary = ""
+        
         for query in queries:
             try:
                 results = self.supermemory.search_memories(
                     query=query,
                     limit=20,
+                    include_summary=True,
                     filters={
                         "AND": [
                             {
@@ -402,15 +478,24 @@ class IntelligentCommitSplitter:
                     }
                 )
                 all_results.append(results)
+                
+                # Extract summary if available
+                if hasattr(results, 'summary') and results.summary:
+                    semantic_summary += f"Query: {query}\nSummary: {results.summary}\n\n"
+                elif isinstance(results, dict) and 'summary' in results:
+                    semantic_summary += f"Query: {query}\nSummary: {results['summary']}\n\n"
+                    
             except Exception as e:
                 print(f"Error querying Supermemory: {e}")
         
         # Analyze results to group files
         # For now, use a simple heuristic-based grouping
         # In a full implementation, you'd parse the semantic analysis results
-        return self.group_changes_heuristic(changes)
+        commit_groups = self.group_changes_heuristic(changes)
+        
+        return commit_groups, semantic_summary
     
-    def group_changes_heuristic(self, changes: List[FileChange]) -> List[CommitGroup]:
+    def group_changes_heuristic(self, changes: List[FileChange], semantic_summary: str = "") -> List[CommitGroup]:
         """Group changes using heuristic rules as fallback"""
         groups = {}
         
@@ -426,8 +511,8 @@ class IntelligentCommitSplitter:
         # Convert to CommitGroup objects
         commit_groups = []
         for group_key, file_changes in groups.items():
-            # Generate commit message using LLM
-            title, message = self.cerebras.generate_commit_message(file_changes, group_key)
+            # Generate commit message using LLM with semantic context
+            title, message = self.cerebras.generate_commit_message(file_changes, group_key, semantic_summary)
             
             commit_groups.append(CommitGroup(
                 feature_name=group_key,
@@ -577,6 +662,12 @@ class IntelligentCommitSplitter:
         """Main method to run the intelligent commit splitting process"""
         print("🚀 Starting Intelligent Commit Splitting Analysis...")
         
+        # Change to git root directory to ensure all git operations work correctly
+        git_root = self.get_git_root()
+        if git_root != os.getcwd():
+            print(f"📍 Changing to git root directory: {git_root}")
+            os.chdir(git_root)
+        
         # Step 1: Extract all file changes
         print("📊 Step 1: Extracting file changes...")
         changes = self.extract_changes()
@@ -593,8 +684,11 @@ class IntelligentCommitSplitter:
         try:
             # Step 3: Analyze semantic relationships
             print("🔍 Step 3: Analyzing semantic relationships...")
-            commit_groups = self.analyze_semantic_relationships(changes)
+            commit_groups, semantic_summary = self.analyze_semantic_relationships(changes)
             print(f"Identified {len(commit_groups)} logical commit groups")
+            
+            if semantic_summary:
+                print(f"📝 Semantic analysis summary generated ({len(semantic_summary)} chars)")
             
             # Step 4: Display results
             print("\n📋 Commit Groups Identified:")
