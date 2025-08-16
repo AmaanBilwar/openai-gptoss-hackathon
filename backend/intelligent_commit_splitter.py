@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from supermemory import Supermemory
 from cerebras.cloud.sdk import Cerebras
+from dotenv import load_dotenv
 
+
+load_dotenv()
 
 @dataclass
 class FileChange:
@@ -74,10 +77,6 @@ class CerebrasLLM:
         
         # Prepare context for the LLM
         context = f"""
-You are an expert at writing clear, descriptive commit messages following conventional commit format.
-
-Feature: {feature_name}
-
 Files changed:
 """
         
@@ -87,11 +86,14 @@ Files changed:
                 context += f"  Changes: {change.diff_content[:200]}...\n"
         
         context += f"""
-Please generate:
-1. A commit title (max 50 chars) following conventional commit format (feat:, fix:, docs:, etc.)
-2. A detailed commit message explaining what was changed and why
+Group: {feature_name}
 
-Focus on the business value and user impact, not just technical details.
+Generate a commit message in this exact format:
+TITLE: feat: your title here (max 50 chars)
+MESSAGE: Your detailed message here explaining what was changed and why.
+
+Use conventional commit format (feat:, fix:, docs:, style:, refactor:, test:, chore:, perf:, ci:, build:)
+Focus on business value and user impact, not just technical details.
 """
         
         try:
@@ -99,7 +101,7 @@ Focus on the business value and user impact, not just technical details.
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert at writing clear, descriptive commit messages following conventional commit format."
+                        "content": "You are a git commit message generator. Always respond with exactly two lines: TITLE: followed by MESSAGE:. Never include markdown, explanations, or extra formatting."
                     },
                     {
                         "role": "user",
@@ -107,17 +109,30 @@ Focus on the business value and user impact, not just technical details.
                     }
                 ],
                 model="llama3.1-8b",
-                max_tokens=300,
+                max_tokens=200,
                 temperature=0.7
             )
             
-            # Parse the response to extract title and message
-            content = response.choices[0].message.content
+            # Simple parsing - just split on TITLE: and MESSAGE:
+            content = response.choices[0].message.content.strip()
             
-            # Split into title and message (assuming title is first line)
-            lines = content.strip().split('\n')
-            title = lines[0].strip()
-            message = '\n'.join(lines[1:]).strip() if len(lines) > 1 else ""
+            # Extract title and message
+            title = ""
+            message = ""
+            
+            lines = content.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith('TITLE:'):
+                    title = line.replace('TITLE:', '').strip()
+                elif line.startswith('MESSAGE:'):
+                    message = line.replace('MESSAGE:', '').strip()
+            
+            # Fallback if parsing fails
+            if not title:
+                title = f"feat: {feature_name}"
+            if not message:
+                message = f"Changes related to {feature_name}"
             
             return title, message
             
@@ -136,19 +151,58 @@ class IntelligentCommitSplitter:
         self.session_id = f"commit_split_{int(os.getpid())}"
     
     def get_git_diff_files(self) -> List[str]:
-        """Get list of files that have been changed in git"""
+        """Get list of files that have been changed in git, including new files"""
+        changed_files = []
+        
         try:
+            # Get modified/deleted files
             result = subprocess.run(
                 ['git', 'diff', '--name-only'],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 check=True
             )
             
-            if not result.stdout.strip():
-                return []
+            if result.stdout.strip():
+                changed_files.extend([line.strip() for line in result.stdout.split('\n') if line.strip()])
             
-            return [line.strip() for line in result.stdout.split('\n') if line.strip()]
+            # Get newly added files (staged but not committed)
+            result = subprocess.run(
+                ['git', 'diff', '--cached', '--name-only'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            )
+            
+            if result.stdout.strip():
+                changed_files.extend([line.strip() for line in result.stdout.split('\n') if line.strip()])
+            
+            # Get untracked files (not staged yet)
+            result = subprocess.run(
+                ['git', 'ls-files', '--others', '--exclude-standard'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            )
+            
+            if result.stdout.strip():
+                changed_files.extend([line.strip() for line in result.stdout.split('\n') if line.strip()])
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_files = []
+            for file in changed_files:
+                if file not in seen:
+                    seen.add(file)
+                    unique_files.append(file)
+            
+            return unique_files
             
         except subprocess.CalledProcessError as e:
             print(f"Error getting git diff files: {e}")
@@ -161,6 +215,8 @@ class IntelligentCommitSplitter:
                 ['git', 'show', f'{commit_ref}:{file_path}'],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 check=True
             )
             return result.stdout
@@ -175,9 +231,11 @@ class IntelligentCommitSplitter:
                 ['git', 'diff', '--unified=3', file_path],
                 capture_output=True,
                 text=True,
+                encoding='utf-8',
+                errors='replace',
                 check=True
             )
-            return result.stdout
+            return result.stdout or ""
         except subprocess.CalledProcessError as e:
             print(f"Error getting diff for {file_path}: {e}")
             return ""
@@ -222,9 +280,9 @@ class IntelligentCommitSplitter:
                     pass
             
             # Count lines added/removed from diff
-            lines_added = len([line for line in diff_content.split('\n') 
+            lines_added = len([line for line in (diff_content or "").split('\n') 
                              if line.startswith('+') and not line.startswith('+++')])
-            lines_removed = len([line for line in diff_content.split('\n') 
+            lines_removed = len([line for line in (diff_content or "").split('\n') 
                                if line.startswith('-') and not line.startswith('---')])
             
             changes.append(FileChange(
@@ -382,22 +440,107 @@ class IntelligentCommitSplitter:
         return 'other'
     
     def execute_commit_splitting(self, commit_groups: List[CommitGroup], auto_push: bool = False) -> bool:
-        """Execute the commit splitting process (placeholder for now)"""
+        """Execute the commit splitting process by creating separate git commits"""
         print("🎯 Executing commit splitting...")
         print(f"📊 Total commit groups to process: {len(commit_groups)}")
+        
+        # Store current branch name
+        try:
+            current_branch = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                check=True
+            ).stdout.strip()
+            print(f"📍 Current branch: {current_branch}")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Error getting current branch: {e}")
+            return False
+        
+        # Create a backup branch before making changes
+        backup_branch = f"backup-before-split-{int(os.getpid())}"
+        try:
+            subprocess.run(['git', 'checkout', '-b', backup_branch], check=True)
+            subprocess.run(['git', 'checkout', current_branch], check=True)
+            print(f"💾 Created backup branch: {backup_branch}")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Error creating backup branch: {e}")
+            return False
+        
+        successful_commits = 0
         
         for i, group in enumerate(commit_groups, 1):
             print(f"\n--- Processing Group {i}/{len(commit_groups)} ---")
             print(f"Feature: {group.feature_name}")
             print(f"Title: {group.commit_title}")
-            print(f"Message: {group.commit_message}")
             print(f"Files: {[f.file_path for f in group.files]}")
-            print("(Placeholder - actual commit creation would happen here)")
+            
+            try:
+                # Reset staging area
+                subprocess.run(['git', 'reset'], check=True)
+                
+                # Stage only the files for this group
+                for file_change in group.files:
+                    file_path = file_change.file_path
+                    
+                    if file_change.change_type == "deleted":
+                        # Remove file from git tracking
+                        subprocess.run(['git', 'rm', file_path], check=True)
+                        print(f"   🗑️  Staged deletion: {file_path}")
+                    else:
+                        # Add file to staging
+                        subprocess.run(['git', 'add', file_path], check=True)
+                        print(f"   ➕ Staged: {file_path}")
+                
+                # Check if there are any staged changes
+                staged_files = subprocess.run(
+                    ['git', 'diff', '--cached', '--name-only'],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    check=True
+                ).stdout.strip()
+                
+                if not staged_files:
+                    print(f"   ⚠️  No changes to commit for group {group.feature_name}")
+                    continue
+                
+                # Create commit with title and message
+                commit_message = f"{group.commit_title}\n\n{group.commit_message}"
+                
+                subprocess.run(
+                    ['git', 'commit', '-m', commit_message],
+                    check=True
+                )
+                
+                print(f"   ✅ Created commit: {group.commit_title}")
+                successful_commits += 1
+                
+            except subprocess.CalledProcessError as e:
+                print(f"   ❌ Error creating commit for group {group.feature_name}: {e}")
+                continue
         
-        print(f"\n✅ Commit splitting analysis completed!")
-        print("Note: This is a placeholder implementation. Actual commit creation and push operations would be implemented here.")
+        print(f"\n📊 Commit splitting completed!")
+        print(f"✅ Successfully created {successful_commits} commits out of {len(commit_groups)} groups")
         
-        return True
+        # Push commits if requested
+        if auto_push and successful_commits > 0:
+            print(f"\n🚀 Pushing commits to remote...")
+            try:
+                subprocess.run(['git', 'push', 'origin', current_branch], check=True)
+                print(f"✅ Successfully pushed {successful_commits} commits to {current_branch}")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Error pushing commits: {e}")
+                print(f"💡 You can manually push using: git push origin {current_branch}")
+                return False
+        
+        print(f"\n💾 Backup branch created: {backup_branch}")
+        print(f"💡 To revert all changes: git reset --hard {backup_branch}")
+        
+        return successful_commits > 0
     
     def run_intelligent_splitting(self, auto_push: bool = False) -> List[CommitGroup]:
         """Main method to run the intelligent commit splitting process"""
@@ -454,7 +597,7 @@ def main():
     splitter = IntelligentCommitSplitter(supermemory_api_key, cerebras_api_key)
     
     # Run the analysis
-    commit_groups = splitter.run_intelligent_splitting(auto_push=False)
+    commit_groups = splitter.run_intelligent_splitting(auto_push=True)
     
     if commit_groups:
         print(f"\n✅ Analysis completed! Found {len(commit_groups)} commit groups.")
