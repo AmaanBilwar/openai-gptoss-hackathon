@@ -6,17 +6,26 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "backend:dev": "tsx watch src/backend/main.ts",
+    "backend:build": "tsc --project src/backend/tsconfig.json",
+    "backend:start": "node dist/backend/main.js",
+    "chat": "tsx src/backend/chat.ts",
+    "test-input": "tsx src/backend/test-input.ts"
   },
   "dependencies": {
+    "@cerebras/cerebras_cloud_sdk": "^1.46.0",
+    "@octokit/rest": "^21.0.2",
     "@radix-ui/react-slot": "^1.2.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.2.1",
     "lucide-react": "^0.539.0",
     "next": "15.4.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.3.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -24,7 +33,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "tw-animate-css": "^1.3.7",
-    "typescript": "^5"
+    "typescript": "^5.9.2"
   }
 }
