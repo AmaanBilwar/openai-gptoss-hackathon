@@ -9,6 +9,8 @@ import {
   CerebrasChatMessage,
 } from './types';
 import { CEREBRAS_API_KEY, validateConfig } from './config';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
 /**
  * GPT-OSS Tool Caller with Cerebras integration
@@ -49,7 +51,7 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'checkout_branch',
-          description: 'Checkout a branch for a given repository.',
+          description: 'Switch to a different branch in a repository. Use this when you want to change branches without committing changes.',
           parameters: {
             type: 'object',
             properties: {
@@ -280,7 +282,7 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'commit_and_push',
-          description: 'Commit and push changes to GitHub with automatic threshold checking. If changes exceed 1000 lines, automatically triggers intelligent commit splitting. For smaller changes, creates a regular commit with user-provided message.',
+          description: 'Commit and push changes to GitHub. This is the PRIMARY tool for committing and pushing code. Use this when user provides a commit message or wants to push changes. ALWAYS check conversation history for commit message if user provided one. Includes automatic threshold checking and intelligent commit splitting for large changes.',
           parameters: {
             type: 'object',
             properties: {
@@ -336,6 +338,12 @@ Instructions:
 - Always use the most appropriate tool for the user's request
 - Be precise with repository names and parameters
 - Provide helpful explanations when tools are executed
+- When user provides a commit message, use commit_and_push tool (not checkout_branch)
+- When user wants to push changes, use commit_and_push tool
+- Only use checkout_branch when user specifically wants to switch branches without committing
+- ALWAYS check conversation history for commit messages, repository names, and other parameters
+- If user provided information in previous messages, use that information in tool calls
+- Never ask for information that was already provided in the conversation
     
     COMMUNICATION STYLE:
     - Be very concise
@@ -352,14 +360,15 @@ Instructions:
     - Provide rollback instructions for risky operations
     - Ask for confirmation when modifying shared branches
 
-    CORE CAPABILITIES:
-    1. Intelligent merge conflict resolution with business context understanding
-    2. Proactive conflict prevention through pattern analysis
-    3. Automated workflow optimization for team productivity
-    4. Smart commit message generation following conventional commits
-    5. Learning from team patterns to improve suggestions
-    6. Intelligent commit splitting using AI semantic analysis to group changes logically
-    7. Automatic threshold-based commit management (triggers intelligent splitting for changes >1000 lines)
+         CORE CAPABILITIES:
+     1. Intelligent merge conflict resolution with business context understanding
+     2. Proactive conflict prevention through pattern analysis
+     3. Automated workflow optimization for team productivity
+     4. Smart commit message generation following conventional commits
+     5. Learning from team patterns to improve suggestions
+     6. Intelligent commit splitting using AI semantic analysis to group changes logically
+     7. Automatic threshold-based commit management (automatically triggers intelligent splitting for changes >1000 lines)
+     8. When using commit_and_push tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
 
     RESPONSE FORMAT:
     - Provide structured JSON for complex analysis
@@ -373,6 +382,14 @@ Instructions:
     If the user request is not a git related operation, respond with a helpful message explaining that you're a GitHub assistant and can help with repository management, issues, pull requests, and branches. Ask them what GitHub-related task they'd like help with.
 
     Always use available tools for Git operations and maintain audit logs for continuous learning and improvement.
+
+    COMMIT WORKFLOW:
+    - When user says "push code" or "commit and push" → Use commit_and_push tool
+    - When user provides a commit message → Use commit_and_push tool
+    - When user wants to switch branches only → Use checkout_branch tool
+    - commit_and_push tool handles branch switching automatically if needed
+    - ALWAYS extract commit message from conversation history if user provided one
+    - If user provided commit message in previous messages, use that message in commit_and_push tool
 
     Reasoning: ${reasoningLevel}`;
   }
@@ -709,6 +726,16 @@ Instructions:
   private async executeCommitAndPush(parameters: Record<string, any>): Promise<ToolResult> {
     try {
       const commitMessage = parameters.commit_message;
+      
+      // Validate commit message
+      if (!commitMessage || typeof commitMessage !== 'string') {
+        return {
+          success: false,
+          error: 'Commit message is required and must be a string',
+          suggestion: 'Please provide a valid commit message'
+        };
+      }
+      
       const files = parameters.files || null;
       const autoPush = parameters.auto_push !== false; // default to true
       const forceIntelligentSplit = parameters.force_intelligent_split || false;
@@ -734,13 +761,21 @@ Instructions:
         
         // If exceeds threshold, trigger intelligent commit split
         if (thresholdCheck.exceeds_threshold) {
+          console.log(`🚀 Large changes detected (${thresholdCheck.total_changes} lines > 1000). Triggering intelligent commit splitting...`);
+          
+          // Actually trigger the intelligent commit splitter
+          const intelligentSplitResult = await this.executeIntelligentCommitSplit({
+            auto_push: autoPush,
+            dry_run: false
+          });
+          
           return {
             success: true,
-            action: 'intelligent_split_triggered',
+            action: 'intelligent_split_executed',
             reason: `Changes exceed threshold (${thresholdCheck.total_changes} lines > 1000)`,
             threshold_analysis: thresholdCheck,
-            message: `Large changes detected (${thresholdCheck.total_changes} lines). Automatically triggering intelligent commit splitting for better organization.`,
-            next_step: 'intelligent_commit_split'
+            intelligent_split_result: intelligentSplitResult,
+            message: `Large changes detected (${thresholdCheck.total_changes} lines). Successfully executed intelligent commit splitting.`
           };
         }
       }
@@ -921,8 +956,6 @@ Instructions:
    * Helper method to execute shell commands
    */
   private async execAsync(command: string): Promise<{ stdout: string; stderr: string }> {
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
     const execAsync = promisify(exec);
     return await execAsync(command);
   }
