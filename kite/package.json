@@ -11,7 +11,8 @@
     "backend:build": "tsc --project src/backend/tsconfig.json",
     "backend:start": "node dist/backend/main.js",
     "chat": "tsx src/backend/chat.ts",
-    "test-input": "tsx src/backend/test-input.ts"
+    "test-input": "tsx src/backend/test-input.ts",
+    "test-intelligent-split": "tsx src/backend/test-intelligent-split.ts"
   },
   "dependencies": {
     "@cerebras/cerebras_cloud_sdk": "^1.46.0",
@@ -24,6 +25,7 @@
     "next": "15.4.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "supermemory": "^3.0.0-alpha.22",
     "tailwind-merge": "^3.3.1",
     "zod": "^3.23.8"
   },

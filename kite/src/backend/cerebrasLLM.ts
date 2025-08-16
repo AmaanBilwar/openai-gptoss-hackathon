@@ -1,0 +1,108 @@
+import Cerebras from '@cerebras/cerebras_cloud_sdk';
+import { FileChange } from './types';
+
+/**
+ * Client for interacting with Cerebras LLM for commit message generation
+ */
+export class CerebrasLLM {
+  private client: Cerebras;
+
+  constructor(apiKey: string) {
+    this.client = new Cerebras({ apiKey });
+  }
+
+  /**
+   * Generate commit title and message using LLM with semantic context
+   */
+  async generateCommitMessage(
+    fileChanges: FileChange[], 
+    featureName: string, 
+    semanticSummary: string = ""
+  ): Promise<{ title: string; message: string }> {
+    
+    // Prepare context for the LLM
+    let context = `
+Files changed:
+`;
+    
+    for (const change of fileChanges) {
+      context += `- ${change.file_path} (${change.change_type})\n`;
+      if (change.diff_content) {
+        context += `  Changes: ${change.diff_content.substring(0, 200)}...\n`;
+      }
+    }
+    
+    // Add semantic analysis if available
+    if (semanticSummary) {
+      context += `
+Semantic Analysis:
+${semanticSummary}
+`;
+    }
+    
+    context += `
+Group: ${featureName}
+
+Generate a commit message in this exact format:
+TITLE: feat: your title here (max 50 chars)
+MESSAGE: Your detailed message here explaining what was changed and why.
+
+Use conventional commit format (feat:, fix:, docs:, style:, refactor:, test:, chore:, perf:, ci:, build:)
+Focus on business value and user impact, not just technical details.
+Use the semantic analysis to understand the broader context and purpose of these changes.
+`;
+    
+    try {
+      const response = await this.client.chat.completions.create({
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a git commit message generator. Always respond with exactly two lines: TITLE: followed by MESSAGE:. Never include markdown, explanations, or extra formatting.'
+          },
+          {
+            role: 'user',
+            content: context
+          }
+        ],
+        model: 'llama3.1-8b',
+        max_tokens: 200,
+        temperature: 0.7
+      });
+      
+      // Simple parsing - just split on TITLE: and MESSAGE:
+      const content = (response.choices as any[])[0].message.content?.trim() || '';
+      
+      // Extract title and message
+      let title = '';
+      let message = '';
+      
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (trimmedLine.startsWith('TITLE:')) {
+          title = trimmedLine.replace('TITLE:', '').trim();
+        } else if (trimmedLine.startsWith('MESSAGE:')) {
+          message = trimmedLine.replace('MESSAGE:', '').trim();
+        }
+      }
+      
+      // Fallback if parsing fails
+      if (!title) {
+        title = `feat: ${featureName}`;
+      }
+      if (!message) {
+        message = `Changes related to ${featureName}`;
+      }
+      
+      return { title, message };
+      
+    } catch (error) {
+      console.error('Error generating commit message:', error);
+      // Fallback to basic format
+      return {
+        title: `feat: ${featureName}`,
+        message: `Changes related to ${featureName}`
+      };
+    }
+  }
+}
