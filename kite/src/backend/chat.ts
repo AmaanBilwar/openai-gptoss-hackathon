@@ -29,7 +29,7 @@ export async function startInteractiveChat(): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true
+    terminal: false
   });
 
   // Disable line buffering for better input handling
@@ -51,9 +51,6 @@ export async function startInteractiveChat(): Promise<void> {
         console.log('👋 Goodbye! Thanks for using Kite.');
         break;
       }
-
-      // Echo back the input for confirmation
-      console.log(`📝 You said: ${userInput}\n`);
 
       // Add user message to conversation
       messages.push({
