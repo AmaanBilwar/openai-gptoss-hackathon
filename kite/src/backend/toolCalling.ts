@@ -6,7 +6,8 @@ import {
   ToolDefinition,
   ToolCall,
   ToolResult,
-  CerebrasChatMessage,
+  CerebrasMessage,
+  CerebrasResponse
 } from './types';
 import { CEREBRAS_API_KEY, validateConfig } from './config';
 import { exec } from 'child_process';
@@ -344,6 +345,9 @@ Instructions:
 - ALWAYS check conversation history for commit messages, repository names, and other parameters
 - If user provided information in previous messages, use that information in tool calls
 - Never ask for information that was already provided in the conversation
+- For complex workflows, you can use multiple tools in sequence to accomplish the task
+- After each tool execution, analyze the result and decide if additional tools are needed
+- Provide a final summary after completing all necessary tool operations
     
     COMMUNICATION STYLE:
     - Be very concise
@@ -369,6 +373,7 @@ Instructions:
      6. Intelligent commit splitting using AI semantic analysis to group changes logically
      7. Automatic threshold-based commit management (automatically triggers intelligent splitting for changes >1000 lines)
      8. When using commit_and_push tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
+     9. Multi-turn tool use for complex workflows requiring multiple sequential operations
 
     RESPONSE FORMAT:
     - Provide structured JSON for complex analysis
@@ -394,19 +399,56 @@ Instructions:
     - ALWAYS extract commit message from conversation history if user provided one
     - If user provided commit message in previous messages, use that message in commit_and_push tool
 
+    MULTI-TURN WORKFLOWS:
+    - For complex tasks, you can execute multiple tools in sequence
+    - Example: Create branch → Make changes → Commit → Create PR
+    - After each tool execution, evaluate if additional steps are needed
+    - Provide a final summary of all completed operations
+    - Use conversation context to maintain state between tool calls
+
     Reasoning: ${reasoningLevel}`;
   }
 
   /**
    * Execute a tool call
    */
-  private async executeTool(toolName: string, parameters: Record<string, any>): Promise<ToolResult> {
+  public async executeTool(toolName: string, parameters: Record<string, any>): Promise<ToolResult> {
     switch (toolName) {
       case 'list_repos':
         return await this.githubClient.listRepos();
       
       case 'checkout_branch':
-        return await this.githubClient.checkoutBranch(parameters['repo'], parameters['branch']);
+        {
+          const branchResult = await this.githubClient.checkoutBranch(parameters['repo'], parameters['branch']);
+          // Attempt local checkout as well for immediate usability
+          try {
+            const targetBranch = parameters['branch'];
+            // Ensure we have the latest refs for that branch
+            await this.execAsync(`git fetch origin ${targetBranch}`);
+            // Check if local branch already exists
+            let localExists = false;
+            try {
+              await this.execAsync(`git rev-parse --verify ${targetBranch}`);
+              localExists = true;
+            } catch {}
+            if (localExists) {
+              await this.execAsync(`git switch ${targetBranch}`);
+            } else {
+              await this.execAsync(`git switch -c ${targetBranch} --track origin/${targetBranch}`);
+            }
+            return {
+              ...branchResult,
+              local_switched: true,
+              message: `Switched locally to '${targetBranch}'`
+            } as ToolResult;
+          } catch (err) {
+            return {
+              ...branchResult,
+              local_switched: false,
+              local_error: err instanceof Error ? err.message : String(err)
+            } as ToolResult;
+          }
+        }
       
       case 'create_pr':
         return await this.githubClient.createPullRequest({
@@ -427,11 +469,43 @@ Instructions:
         });
       
       case 'create_branch':
-        return await this.githubClient.createBranch({
-          repo: parameters['repo'],
-          branch: parameters['branch'],
-          fromBranch: parameters['from_branch']
-        });
+        {
+          const result = await this.githubClient.createBranch({
+            repo: parameters['repo'],
+            branch: parameters['branch'],
+            fromBranch: parameters['from_branch']
+          });
+          if (result.success) {
+            // Automatically set up and switch to the new branch locally
+            try {
+              const targetBranch = parameters['branch'];
+              await this.execAsync(`git fetch origin ${targetBranch}`);
+              // If branch already exists locally, just switch
+              let localExists = false;
+              try {
+                await this.execAsync(`git rev-parse --verify ${targetBranch}`);
+                localExists = true;
+              } catch {}
+              if (localExists) {
+                await this.execAsync(`git switch ${targetBranch}`);
+              } else {
+                await this.execAsync(`git switch -c ${targetBranch} --track origin/${targetBranch}`);
+              }
+              return {
+                ...result,
+                local_switched: true,
+                message: `Branch '${targetBranch}' created remotely and switched locally`
+              } as ToolResult;
+            } catch (err) {
+              return {
+                ...result,
+                local_switched: false,
+                local_error: err instanceof Error ? err.message : String(err)
+              } as ToolResult;
+            }
+          }
+          return result;
+        }
       
       case 'list_issues':
         return await this.githubClient.listIssues(parameters['repo']);
@@ -550,20 +624,94 @@ Instructions:
   }
 
   /**
-   * Stream tool calls with real-time response generation
+   * Format tool result into user-friendly message
+   */
+  private formatToolResult(toolName: string, result: ToolResult): string {
+    if (!result.success) {
+      return `❌ ${result.error || 'Operation failed'}${result.suggestion ? `\n💡 ${result.suggestion}` : ''}`;
+    }
+
+    switch (toolName) {
+      case 'list_repos':
+        const repos = result.repos || [];
+        if (repos.length === 0) {
+          return '📁 No repositories found.';
+        }
+        return `📁 Found ${repos.length} repository${repos.length === 1 ? '' : 'ies'}:\n${repos.map((repo: any) => `• ${repo.full_name}`).join('\n')}`;
+
+      case 'checkout_branch':
+        return `✅ Successfully switched to branch '${result.branch || 'unknown'}'`;
+
+      case 'create_pr':
+        return `✅ Pull request created successfully!\n🔗 ${result.url || 'URL not available'}\n📝 Title: ${result.title || 'No title'}`;
+
+      case 'create_issue':
+        return `✅ Issue created successfully!\n🔗 ${result.url || 'URL not available'}\n📝 Title: ${result.title || 'No title'}`;
+
+      case 'create_branch':
+        return `✅ Branch '${result.branch || 'unknown'}' created successfully`;
+
+      case 'list_issues':
+        const issues = result.issues || [];
+        if (issues.length === 0) {
+          return '📋 No issues found in this repository.';
+        }
+        return `📋 Found ${issues.length} issue${issues.length === 1 ? '' : 's'}:\n${issues.map((issue: any) => `• #${issue.number}: ${issue.title} (${issue.state})`).join('\n')}`;
+
+      case 'get_issue':
+        const issue = result.issue;
+        if (!issue) {
+          return '❌ Issue not found';
+        }
+        return `📋 Issue #${issue.number}: ${issue.title}\n📝 ${issue.body || 'No description'}\n🔗 ${issue.url}`;
+
+      case 'update_issue':
+        return `✅ Issue #${result.issue_number || 'unknown'} updated successfully`;
+
+      case 'merge_pr':
+        return `✅ Pull request #${result.pull_number || 'unknown'} merged successfully`;
+
+      case 'intelligent_commit_split':
+        if (result.dry_run) {
+          return `📋 Analysis complete! Found ${result.commit_groups_count} logical commit groups:\n${(result.commit_groups || []).map((group: any, i: number) => 
+            `${i + 1}. ${group.commit_title}\n   Files: ${group.files.length} file${group.files.length === 1 ? '' : 's'}`
+          ).join('\n')}\n\nNo commits were created (dry run mode).`;
+        }
+        return `✅ Successfully created ${result.commit_groups_count} logical commits${result.auto_push ? ' and pushed to remote' : ''}`;
+
+      case 'commit_and_push':
+        if (result.action === 'intelligent_split_executed') {
+          return `🚀 Large changes detected (${result.threshold_analysis?.total_changes} lines). Successfully executed intelligent commit splitting.`;
+        }
+        return `✅ Successfully committed changes with message: '${result.commit_message}'\n${result.pushed ? '📤 Pushed to remote' : '📤 Not pushed (auto_push disabled)'}`;
+
+      case 'check_changes_threshold':
+        const totalChanges = result.total_changes || 0;
+        const threshold = result.threshold || 1000;
+        if (result.exceeds_threshold) {
+          return `⚠️ Large changes detected: ${totalChanges} lines (threshold: ${threshold})\n📁 ${result.file_count} files changed\n💡 Recommendation: Use intelligent commit splitting`;
+        }
+        return `✅ Changes are within threshold: ${totalChanges} lines (threshold: ${threshold})\n📁 ${result.file_count} files changed`;
+
+      default:
+        return `✅ ${toolName} completed successfully`;
+    }
+  }
+
+  /**
+   * Stream tool calls with real-time response generation and multi-turn support
    */
   async *callToolsStream(
     messages: ChatMessage[], 
     reasoningLevel: string = 'medium'
   ): AsyncGenerator<string> {
     const systemPrompt = this.getSystemPrompt(reasoningLevel);
-    const formattedPrompt = systemPrompt + this.formatMessagesWithTools(messages);
     
-    // Prepare messages for Cerebras API
-    const apiMessages = [
+    // Prepare initial messages for Cerebras API
+    const apiMessages: any[] = [
       {
-        role: 'system' as const,
-        content: formattedPrompt
+        role: 'system',
+        content: systemPrompt
       }
     ];
     
@@ -571,82 +719,193 @@ Instructions:
     for (const message of messages) {
       if (message.role === 'user') {
         apiMessages.push({
-          role: 'user' as any,
+          role: 'user',
           content: message.content
         });
       }
     }
     
     try {
-      // Streaming response
-      const stream = await this.client.chat.completions.create({
-        messages: apiMessages,
-        model: this.modelId,
-        stream: true,
-        max_tokens: 512,
-        temperature: 0.7,
-        tools: this.tools as any
-      });
+      let turnCount = 0;
+      const maxTurns = 10; // Prevent infinite loops
       
-      let fullResponse = '';
-      const toolCallsBuffer: Map<number, { name?: string; arguments: string }> = new Map();
-      
-      for await (const chunk of stream as any) {
-        const delta = (chunk.choices?.[0] as any)?.delta;
+      while (turnCount < maxTurns) {
+        turnCount++;
         
-        // Stream any assistant text
-        if (delta?.content) {
-          fullResponse += delta.content;
-          yield delta.content;
+        // Make API call
+        const response = await this.client.chat.completions.create({
+          messages: apiMessages,
+          model: this.modelId,
+          stream: false, // Disable streaming for multi-turn to handle tool calls properly
+          max_tokens: 1024,
+          temperature: 0.7,
+          tools: this.tools as any
+        });
+        
+        const choice = (response as any).choices[0];
+        const message = choice.message;
+        
+        // If no tool calls, we're done - stream the final response
+        if (!message.tool_calls || message.tool_calls.length === 0) {
+          if (message.content) {
+            yield message.content;
+          }
+          break;
         }
         
-        // Capture streamed tool calls
-        if (delta?.tool_calls) {
-          for (const tc of delta.tool_calls as any[]) {
-            const idx = tc.index || 0;
-            const entry = toolCallsBuffer.get(idx) || { name: undefined, arguments: '' };
+        // Save the assistant's message with tool calls
+        apiMessages.push({
+          role: 'assistant',
+          content: message.content || '',
+          tool_calls: message.tool_calls
+        });
+        
+        // Execute all tool calls sequentially
+        for (const toolCall of message.tool_calls) {
+          try {
+            const toolName = toolCall.function.name;
+            const argsStr = toolCall.function.arguments || '{}';
+            const parameters = JSON.parse(argsStr);
             
-            if (tc.function?.name) {
-              entry.name = tc.function.name;
-            }
+            // Execute the tool
+            const result = await this.executeTool(toolName, parameters);
             
-            if (tc.function?.arguments) {
-              entry.arguments += tc.function.arguments;
-            }
+            // Format the result for user display
+            const userMessage = this.formatToolResult(toolName, result);
             
-            toolCallsBuffer.set(idx, entry);
+            // Yield the tool execution result to the user
+            yield `\n\n${userMessage}`;
+            
+            // Add tool response to conversation for next turn
+            apiMessages.push({
+              role: 'tool',
+              content: JSON.stringify(result),
+              tool_call_id: toolCall.id
+            });
+            
+          } catch (error) {
+            const errorMessage = `❌ Error executing tool: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            yield `\n\n${errorMessage}`;
+            
+            // Add error response to conversation
+            apiMessages.push({
+              role: 'tool',
+              content: JSON.stringify({ success: false, error: errorMessage }),
+              tool_call_id: toolCall.id
+            });
           }
         }
       }
       
-      // After streaming is complete, check for tool calls
-      if (toolCallsBuffer.size > 0) {
-        // Prefer native tool calls captured from the stream
-        for (const [idx, entry] of toolCallsBuffer) {
-          const toolName = entry.name;
-          const argsStr = entry.arguments || '{}';
-          
-          try {
-            const parameters = JSON.parse(argsStr);
-            if (toolName) {
-              const result = await this.executeTool(toolName, parameters);
-              yield `\n\nTool executed: ${toolName}\nResult: ${JSON.stringify(result, null, 2)}`;
-            }
-          } catch (error) {
-            yield `\n\nError parsing tool call arguments: ${error}`;
-          }
-        }
-      } else {
-        // Fallback: parse a JSON code block from text content
-        const toolCall = this.extractToolCall(fullResponse);
-        if (toolCall) {
-          const result = await this.executeTool(toolCall.tool, toolCall.parameters);
-          yield `\n\nTool executed: ${toolCall.tool}\nResult: ${JSON.stringify(result, null, 2)}`;
-        }
+      if (turnCount >= maxTurns) {
+        yield `\n\n⚠️ Maximum tool call turns (${maxTurns}) reached. Stopping to prevent infinite loops.`;
       }
       
     } catch (error) {
-      yield `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      yield `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    }
+  }
+
+  /**
+   * Multi-turn tool calling without streaming (for simpler use cases)
+   */
+  async callToolsMultiTurn(
+    messages: ChatMessage[], 
+    reasoningLevel: string = 'medium'
+  ): Promise<string> {
+    const systemPrompt = this.getSystemPrompt(reasoningLevel);
+    
+    // Prepare initial messages for Cerebras API
+    const apiMessages: any[] = [
+      {
+        role: 'system',
+        content: systemPrompt
+      }
+    ];
+    
+    // Add user messages
+    for (const message of messages) {
+      if (message.role === 'user') {
+        apiMessages.push({
+          role: 'user',
+          content: message.content
+        });
+      }
+    }
+    
+    try {
+      let turnCount = 0;
+      const maxTurns = 10;
+      let finalResponse = '';
+      
+      while (turnCount < maxTurns) {
+        turnCount++;
+        
+        // Make API call
+        const response = await this.client.chat.completions.create({
+          messages: apiMessages,
+          model: this.modelId,
+          stream: false,
+          max_tokens: 1024,
+          temperature: 0.7,
+          tools: this.tools as any
+        });
+        
+        const choice = (response as any).choices[0];
+        const message = choice.message;
+        
+        // If no tool calls, we're done
+        if (!message.tool_calls || message.tool_calls.length === 0) {
+          finalResponse = message.content || '';
+          break;
+        }
+        
+        // Save the assistant's message with tool calls
+        apiMessages.push({
+          role: 'assistant',
+          content: message.content || '',
+          tool_calls: message.tool_calls
+        });
+        
+        // Execute all tool calls sequentially
+        for (const toolCall of message.tool_calls) {
+          try {
+            const toolName = toolCall.function.name;
+            const argsStr = toolCall.function.arguments || '{}';
+            const parameters = JSON.parse(argsStr);
+            
+            // Execute the tool
+            const result = await this.executeTool(toolName, parameters);
+            
+            // Add tool response to conversation for next turn
+            apiMessages.push({
+              role: 'tool',
+              content: JSON.stringify(result),
+              tool_call_id: toolCall.id
+            });
+            
+          } catch (error) {
+            // Add error response to conversation
+            apiMessages.push({
+              role: 'tool',
+              content: JSON.stringify({ 
+                success: false, 
+                error: error instanceof Error ? error.message : 'Unknown error' 
+              }),
+              tool_call_id: toolCall.id
+            });
+          }
+        }
+      }
+      
+      if (turnCount >= maxTurns) {
+        finalResponse = `⚠️ Maximum tool call turns (${maxTurns}) reached. Stopping to prevent infinite loops.`;
+      }
+      
+      return finalResponse;
+      
+    } catch (error) {
+      return `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   }
 
