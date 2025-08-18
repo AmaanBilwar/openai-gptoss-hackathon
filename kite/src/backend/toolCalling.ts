@@ -51,6 +51,191 @@ export class GPTOSSToolCaller {
       {
         type: 'function',
         function: {
+          name: 'list_pull_requests',
+          description: 'List pull requests for a given repository. Can filter by state (open, closed, or all).',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              state: {
+                type: 'string',
+                description: 'Filter pull requests by state (open, closed, or all)',
+                enum: ['open', 'closed', 'all']
+              }
+            },
+            required: ['repo']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'get_pull_request',
+          description: 'Get details of a specific pull request by number.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              pull_number: {
+                type: 'integer',
+                description: 'The pull request number to retrieve'
+              }
+            },
+            required: ['repo', 'pull_number']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'update_pull_request',
+          description: 'Update an existing pull request with new title, body, state, or base branch.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              pull_number: {
+                type: 'integer',
+                description: 'The pull request number to update'
+              },
+              title: {
+                type: 'string',
+                description: 'New title for the pull request'
+              },
+              body: {
+                type: 'string',
+                description: 'New body/description for the pull request'
+              },
+              state: {
+                type: 'string',
+                description: 'State of the pull request (open or closed)',
+                enum: ['open', 'closed']
+              },
+              base: {
+                type: 'string',
+                description: 'New base branch for the pull request'
+              }
+            },
+            required: ['repo', 'pull_number']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_pull_request_commits',
+          description: 'List all commits on a pull request.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              pull_number: {
+                type: 'integer',
+                description: 'The pull request number'
+              },
+              per_page: {
+                type: 'integer',
+                description: 'Number of commits per page (default: 100)'
+              },
+              page: {
+                type: 'integer',
+                description: 'Page number (default: 1)'
+              }
+            },
+            required: ['repo', 'pull_number']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_pull_request_files',
+          description: 'List all files changed in a pull request.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              pull_number: {
+                type: 'integer',
+                description: 'The pull request number'
+              },
+              per_page: {
+                type: 'integer',
+                description: 'Number of files per page (default: 100)'
+              },
+              page: {
+                type: 'integer',
+                description: 'Page number (default: 1)'
+              }
+            },
+            required: ['repo', 'pull_number']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'check_pull_request_merged',
+          description: 'Check if a pull request has been merged.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              pull_number: {
+                type: 'integer',
+                description: 'The pull request number to check'
+              }
+            },
+            required: ['repo', 'pull_number']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'update_pull_request_branch',
+          description: 'Update a pull request branch with the latest upstream changes by merging HEAD from the base branch.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              pull_number: {
+                type: 'integer',
+                description: 'The pull request number'
+              },
+              expected_head_sha: {
+                type: 'string',
+                description: 'The expected SHA of the pull request\'s HEAD ref (optional)'
+              }
+            },
+            required: ['repo', 'pull_number']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'checkout_branch',
           description: 'Switch to a different branch in a repository. Use this when you want to change branches without committing changes.',
           parameters: {
@@ -73,7 +258,7 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'create_pr',
-          description: 'Create a pull request for a given repository.',
+          description: 'Create a pull request for a given repository. IMPORTANT: The head branch must exist and have commits. If you need to create a new branch or commit changes first, use create_branch and commit_and_push tools before creating the PR.',
           parameters: {
             type: 'object',
             properties: {
@@ -325,6 +510,18 @@ export class GPTOSSToolCaller {
             required: []
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'check_git_status',
+          description: 'Check the current git status including current branch, uncommitted changes, and remote status. Use this to understand the repository state before making changes.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
       }
     ];
   }
@@ -335,10 +532,11 @@ export class GPTOSSToolCaller {
   private getSystemPrompt(reasoningLevel: string = 'medium'): string {
     return `Your name is Kite and you're an expert GitHub repository management assistant powered by GPT-OSS. You have access to tools for managing repositories, branches, issues, and pull requests.
 
+CRITICAL: When executing tools, ONLY execute the tool and return the result. DO NOT add any additional commentary, explanations, or text after tool execution. The tool results are complete and self-explanatory. If you need to use a tool, do not include any text content in your response - only use the tool. NEVER generate text content when using tools - only call the tool and stop. IMPORTANT: When you use a tool, do not write any text in the content field - only make the tool call.
+
 Instructions:
 - Always use the most appropriate tool for the user's request
 - Be precise with repository names and parameters
-- Provide helpful explanations when tools are executed
 - When user provides a commit message, use commit_and_push tool (not checkout_branch)
 - When user wants to push changes, use commit_and_push tool
 - Only use checkout_branch when user specifically wants to switch branches without committing
@@ -347,7 +545,15 @@ Instructions:
 - Never ask for information that was already provided in the conversation
 - For complex workflows, you can use multiple tools in sequence to accomplish the task
 - After each tool execution, analyze the result and decide if additional tools are needed
-- Provide a final summary after completing all necessary tool operations
+- DO NOT provide additional commentary after tool execution unless specifically requested by the user
+
+  PULL REQUEST WORKFLOW:
+  - When creating a pull request, FIRST check if there are uncommitted changes using check_changes_threshold
+  - If there are uncommitted changes, commit them first using commit_and_push with an appropriate message
+  - Then create a new branch using create_branch if needed
+  - Finally create the pull request using create_pr
+  - NEVER try to create a PR from a non-existent branch
+  - The head branch for PR creation must exist and have commits
     
     COMMUNICATION STYLE:
     - Be very concise
@@ -357,6 +563,9 @@ Instructions:
     - Dont use emojis or repeat the question
     - Don't use em dashes (—)
     - DONT RESPOND WITH TABLES
+    - DO NOT add commentary after tool execution - the tool results are self-explanatory
+    - NEVER add additional text after tool execution - just execute the tool and stop
+    - When using tools, leave the content field empty - do not generate any text content
 
     SAFETY PROTOCOLS:
     - Always validate commands before execution
@@ -403,8 +612,8 @@ Instructions:
     - For complex tasks, you can execute multiple tools in sequence
     - Example: Create branch → Make changes → Commit → Create PR
     - After each tool execution, evaluate if additional steps are needed
-    - Provide a final summary of all completed operations
     - Use conversation context to maintain state between tool calls
+    - DO NOT repeat information that was already provided by tool results
 
     Reasoning: ${reasoningLevel}`;
   }
@@ -506,6 +715,59 @@ Instructions:
           }
           return result;
         }
+      case 'list_pull_requests':
+        return await this.githubClient.listPullRequests(parameters['repo'], parameters['state']);
+      
+      case 'get_pull_request':
+        return await this.githubClient.getPullRequest({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          pullNumber: parameters['pull_number']
+        });
+      
+      case 'update_pull_request':
+        return await this.githubClient.updatePullRequest({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          pullNumber: parameters['pull_number'],
+          title: parameters['title'],
+          body: parameters['body'],
+          state: parameters['state'],
+          base: parameters['base']
+        });
+      
+      case 'list_pull_request_commits':
+        return await this.githubClient.listPullRequestCommits({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          pullNumber: parameters['pull_number'],
+          perPage: parameters['per_page'],
+          page: parameters['page']
+        });
+      
+      case 'list_pull_request_files':
+        return await this.githubClient.listPullRequestFiles({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          pullNumber: parameters['pull_number'],
+          perPage: parameters['per_page'],
+          page: parameters['page']
+        });
+      
+      case 'check_pull_request_merged':
+        return await this.githubClient.checkPullRequestMerged({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          pullNumber: parameters['pull_number']
+        });
+      
+      case 'update_pull_request_branch':
+        return await this.githubClient.updatePullRequestBranch({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          pullNumber: parameters['pull_number'],
+          expectedHeadSha: parameters['expected_head_sha']
+        });
       
       case 'list_issues':
         return await this.githubClient.listIssues(parameters['repo']);
@@ -545,6 +807,9 @@ Instructions:
       
       case 'check_changes_threshold':
         return await this.executeCheckChangesThreshold(parameters);
+      
+      case 'check_git_status':
+        return await this.executeCheckGitStatus();
       
       default:
         return {
@@ -651,6 +916,66 @@ Instructions:
       case 'create_branch':
         return `✅ Branch '${result.branch || 'unknown'}' created successfully`;
 
+      case 'list_pull_requests':
+        const pullRequests = result.pull_requests || [];
+        if (pullRequests.length === 0) {
+          return '📋 No pull requests found in this repository.';
+        }
+        
+        const repoName = result.repo || 'unknown repository';
+        const formattedPRs = pullRequests.map((pr: any) => {
+          const openedDate = new Date(pr.created_at).toLocaleDateString();
+          const assignees = pr.assignees?.map((a: any) => a.login).join(', ') || 'unassigned';
+          const reviewers = pr.requested_reviewers?.map((r: any) => r.login).join(', ') || 'none';
+          
+          return `• **#${pr.number}**: ${pr.title}\n  📅 Opened: ${openedDate}\n  👤 Assignees: ${assignees}\n  👀 Reviewers: ${reviewers}`;
+        }).join('\n\n');
+        
+        return `📋 Found ${pullRequests.length} pull request${pullRequests.length === 1 ? '' : 's'}:\n\n${formattedPRs}`;
+
+      case 'get_pull_request':
+        const pr = result.pull_request;
+        if (!pr) {
+          return '❌ Pull request not found';
+        }
+        const prState = pr.state === 'open' ? '🟢 Open' : '🔴 Closed';
+        const prMerged = pr.merged ? '✅ Merged' : '⏳ Not merged';
+        return `📋 **Pull Request #${pr.number}**: ${pr.title}\n\n${prState} | ${prMerged}\n\n📝 **Description**:\n${pr.body || 'No description provided'}\n\n🔗 **URL**: ${pr.url}`;
+
+      case 'update_pull_request':
+        const updateMessage = result.state === 'closed' ? 'closed' : 'updated';
+        return `✅ Pull request #${result.pull_number || 'unknown'} ${updateMessage} successfully`;
+
+      case 'list_pull_request_commits':
+        const commits = result.commits || [];
+        if (commits.length === 0) {
+          return '📋 No commits found in this pull request.';
+        }
+        const commitList = commits.map((commit: any) => {
+          const commitDate = new Date(commit.commit.author.date).toLocaleDateString();
+          return `• ${commit.sha.substring(0, 7)} - ${commit.commit.message.split('\n')[0]} (${commitDate})`;
+        }).join('\n');
+        return `📋 Found ${commits.length} commit${commits.length === 1 ? '' : 's'} in pull request #${result.pull_number}:\n${commitList}`;
+
+      case 'list_pull_request_files':
+        const files = result.files || [];
+        if (files.length === 0) {
+          return '📋 No files found in this pull request.';
+        }
+        const fileList = files.map((file: any) => {
+          const status = file.status === 'added' ? '🟢 Added' : file.status === 'modified' ? '🟡 Modified' : '🔴 Removed';
+          return `• ${file.filename} (${status}) - +${file.additions} -${file.deletions}`;
+        }).join('\n');
+        return `📋 Found ${files.length} file${files.length === 1 ? '' : 's'} in pull request #${result.pull_number}:\n${fileList}`;
+
+      case 'check_pull_request_merged':
+        const isMerged = result.merged;
+        const mergeStatus = isMerged ? '✅ Merged' : '⏳ Not merged';
+        return `📋 Pull request #${result.pull_number}: ${mergeStatus}`;
+
+      case 'update_pull_request_branch':
+        return `✅ Pull request #${result.pull_number || 'unknown'} branch updated successfully`;
+
       case 'list_issues':
         const issues = result.issues || [];
         if (issues.length === 0) {
@@ -693,6 +1018,16 @@ Instructions:
         }
         return `✅ Changes are within threshold: ${totalChanges} lines (threshold: ${threshold})\n📁 ${result.file_count} files changed`;
 
+      case 'check_git_status':
+        const currentBranch = result.current_branch || 'unknown';
+        const statusSummary = result.status_summary || 'Unknown status';
+        if (result.has_uncommitted_changes) {
+          const stagedCount = result.staged_files_count || 0;
+          const unstagedCount = result.unstaged_files_count || 0;
+          return `📋 **Current Branch**: ${currentBranch}\n📝 **Status**: ${statusSummary}\n📁 **Staged**: ${stagedCount} files\n📁 **Unstaged**: ${unstagedCount} files`;
+        }
+        return `📋 **Current Branch**: ${currentBranch}\n✅ **Status**: ${statusSummary}`;
+
       default:
         return `✅ ${toolName} completed successfully`;
     }
@@ -720,7 +1055,7 @@ Instructions:
       if (message.role === 'user') {
         apiMessages.push({
           role: 'user',
-          content: message.content
+          content: message.content + '\n\nIMPORTANT: If you need to use a tool, do not write any text content - only make the tool call.'
         });
       }
     }
@@ -738,7 +1073,7 @@ Instructions:
           model: this.modelId,
           stream: false, // Disable streaming for multi-turn to handle tool calls properly
           max_tokens: 1024,
-          temperature: 0.7,
+          temperature: 0.1, // Lower temperature to reduce creative content generation
           tools: this.tools as any
         });
         
@@ -747,7 +1082,8 @@ Instructions:
         
         // If no tool calls, we're done - stream the final response
         if (!message.tool_calls || message.tool_calls.length === 0) {
-          if (message.content) {
+          // Only yield content if it's meaningful and not just tool execution commentary
+          if (message.content && message.content.trim()) {
             yield message.content;
           }
           break;
@@ -1087,6 +1423,50 @@ Instructions:
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         suggestion: 'Check that you have uncommitted changes and that the repository is in a valid state'
+      };
+    }
+  }
+
+  /**
+   * Check the current git status
+   */
+  private async executeCheckGitStatus(): Promise<ToolResult> {
+    try {
+      // Get current branch
+      const { stdout: currentBranch } = await this.execAsync('git branch --show-current');
+      
+      // Get git status
+      const { stdout: statusOutput } = await this.execAsync('git status --porcelain');
+      
+      // Get remote status
+      const { stdout: remoteStatus } = await this.execAsync('git status --porcelain=v2 --branch');
+      
+      // Parse status
+      const hasUncommittedChanges = statusOutput.trim().length > 0;
+      const statusLines = statusOutput.split('\n').filter(line => line.trim());
+      
+      // Categorize changes
+      const stagedFiles = statusLines.filter(line => line.startsWith('A ') || line.startsWith('M ') || line.startsWith('D '));
+      const unstagedFiles = statusLines.filter(line => line.startsWith(' M') || line.startsWith(' D') || line.startsWith('??'));
+      
+      return {
+        success: true,
+        current_branch: currentBranch.trim(),
+        has_uncommitted_changes: hasUncommittedChanges,
+        staged_files_count: stagedFiles.length,
+        unstaged_files_count: unstagedFiles.length,
+        total_changes: statusLines.length,
+        staged_files: stagedFiles.map(line => line.substring(3)),
+        unstaged_files: unstagedFiles.map(line => line.substring(3)),
+        status_summary: hasUncommittedChanges ? 
+          `${stagedFiles.length} staged, ${unstagedFiles.length} unstaged changes` : 
+          'No uncommitted changes'
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        suggestion: 'Check that you are in a git repository'
       };
     }
   }
