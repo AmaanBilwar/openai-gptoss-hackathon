@@ -1444,8 +1444,23 @@ Instructions:
         // Push if requested
         let pushOutput = null;
         if (autoPush) {
-          const { stdout } = await this.execAsync('git push');
-          pushOutput = stdout;
+          try {
+            const { stdout } = await this.execAsync('git push');
+            pushOutput = stdout;
+          } catch (pushError) {
+            // Check if it's an upstream branch issue
+            if (pushError instanceof Error && pushError.message.includes('no upstream branch')) {
+              // Get current branch name
+              const { stdout: currentBranch } = await this.execAsync('git branch --show-current');
+              const branchName = currentBranch.trim();
+              
+              // Set upstream and push
+              const { stdout: upstreamOutput } = await this.execAsync(`git push --set-upstream origin ${branchName}`);
+              pushOutput = upstreamOutput;
+            } else {
+              throw pushError; // Re-throw if it's a different error
+            }
+          }
         }
         
         return {
