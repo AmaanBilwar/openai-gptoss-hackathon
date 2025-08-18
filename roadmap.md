@@ -8,7 +8,7 @@
 
 ## need immediate attention
 
-- [ ] compositional / sequential tool calling - Amaan
+- [x] compositional / sequential tool calling - Amaan
 - [ ] auth with clerk - Ani
 - [ ] access repo and [pr numbers](issues.md) - Vishesh
     - [ ] file manager
@@ -23,6 +23,8 @@
     - [ ] sidebar
     - [ ] settings page
         - [ ] settings page — take inspo from t3.chat
+            - [ ] repo access toggle
+            - [ ] max turns (tool calls in a run) toggle  
         - [ ] users  page
         - [ ] activity page  
     - [ ] login butons
