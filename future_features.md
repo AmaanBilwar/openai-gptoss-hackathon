@@ -5,7 +5,8 @@
 
 - [ ] expand to other git hosts as well (gitlab, bitbucket etc)
 - [ ] llm response caching
-- [ ] implement rate limits
+
+- [ ] llm rate limits
 
 
-- [ ] bring  your own api key 
+- [ ] bring  your own api key ? 
