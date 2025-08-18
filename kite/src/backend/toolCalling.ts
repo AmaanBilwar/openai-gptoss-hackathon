@@ -258,7 +258,7 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'create_pr',
-          description: 'Create a pull request for a given repository. IMPORTANT: The head branch must exist and have commits. If the head branch doesn\'t exist, use create_branch first. Only check for uncommitted changes if the user wants to include current changes in the PR.',
+          description: 'Create a pull request for a given repository. ONLY use this after confirming: 1) Head branch exists, 2) User has provided all required info (repo, title, description, head, base), 3) Any uncommitted changes have been handled. NEVER assume branch names - always get them from user.',
           parameters: {
             type: 'object',
             properties: {
@@ -569,17 +569,10 @@ Instructions:
 - DO NOT provide additional commentary after tool execution unless specifically requested by the user
 - DO NOT use list_repos unless user specifically asks to see all repositories
 - When user asks to create something (PR, issue, branch), ask for required information instead of listing repositories
+- NEVER assume branch names, repository names, or any other parameters - always ask the user
+- Follow the exact workflow steps in order - do not skip steps or make assumptions
 
-  PULL REQUEST WORKFLOW:
-- When user asks to "create a new pr" or "create a pull request", FIRST ask for required information: repository, title, and description
-- DO NOT list all repositories unless specifically asked
-- If the user provides repository, title, and description, proceed with PR creation
-- If the user specifies exact head/base branches, check if head branch exists first
-- If the head branch doesn't exist, create it using create_branch
-- If there are uncommitted changes AND the user wants to include them in the PR, then check_changes_threshold and commit them
-- NEVER try to create a PR from a non-existent branch
-- The head branch for PR creation must exist and have commits
-- Only check for uncommitted changes when the user wants to include current changes in the PR
+
     
     COMMUNICATION STYLE:
     - Be very concise
@@ -640,6 +633,19 @@ Instructions:
     - After each tool execution, evaluate if additional steps are needed
     - Use conversation context to maintain state between tool calls
     - DO NOT repeat information that was already provided by tool results
+
+    PULL REQUEST WORKFLOW:
+    1. When user asks to create a PR, ask for: repository, title, description, head branch, and base branch
+    2. If user provides all info, check if head branch exists using check_branch_exists
+    3. If head branch doesn't exist, ask user if they want to create it
+    4. Check for uncommitted changes using check_changes_threshold
+    5. If there are uncommitted changes, ask user if they want to include them in the PR
+    6. If user wants to include changes, commit them first using commit_and_push
+    7. Create the PR using create_pr
+    8. NEVER try to create a PR from a non-existent branch
+    9. NEVER make assumptions about branch names - always ask the user
+
+
 
     Reasoning: ${reasoningLevel}`;
   }
