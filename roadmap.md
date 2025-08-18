@@ -8,11 +8,10 @@
 
 ## need immediate attention
 
-- [ ] compositional / sequential tool calling
-- [ ] auth with clerk
-- [ ] file manager
-- [ ] access repo and [pr numbers](issues.md)
-
+- [ ] compositional / sequential tool calling - Amaan
+- [ ] auth with clerk - Ani
+- [ ] access repo and [pr numbers](issues.md) - Vishesh
+    - [ ] file manager
 ## second in command
 ---
 
