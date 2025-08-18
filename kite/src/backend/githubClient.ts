@@ -751,4 +751,46 @@ export class GitHubClient {
       };
     }
   }
+
+  /**
+   * Check if a branch exists
+   */
+  async checkBranchExists(args: { owner: string; repo: string; branch: string }): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: branch } = await octokit.repos.getBranch({
+        owner: args.owner,
+        repo: args.repo,
+        branch: args.branch
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch,
+        exists: true,
+        sha: branch.commit.sha,
+        result: branch
+      };
+    } catch (error) {
+      // If we get a 404, the branch doesn't exist
+      if (error instanceof Error && error.message.includes('404')) {
+        return {
+          success: true,
+          repo: `${args.owner}/${args.repo}`,
+          branch: args.branch,
+          exists: false,
+          message: `Branch '${args.branch}' does not exist`
+        };
+      }
+      
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch
+      };
+    }
+  }
 }

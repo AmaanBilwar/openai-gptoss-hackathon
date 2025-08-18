@@ -9,6 +9,7 @@
 ## need immediate attention
 
 - [x] compositional / sequential tool calling - Amaan
+- [ ] all functions related to issues 
 - [ ] auth with clerk - Ani
 - [ ] access repo and [pr numbers](issues.md) - Vishesh
     - [ ] file manager

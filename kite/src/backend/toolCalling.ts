@@ -258,7 +258,7 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'create_pr',
-          description: 'Create a pull request for a given repository. IMPORTANT: The head branch must exist and have commits. If you need to create a new branch or commit changes first, use create_branch and commit_and_push tools before creating the PR.',
+          description: 'Create a pull request for a given repository. IMPORTANT: The head branch must exist and have commits. If the head branch doesn\'t exist, use create_branch first. Only check for uncommitted changes if the user wants to include current changes in the PR.',
           parameters: {
             type: 'object',
             properties: {
@@ -522,6 +522,27 @@ export class GPTOSSToolCaller {
             required: []
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'check_branch_exists',
+          description: 'Check if a specific branch exists in the repository. Use this before creating PRs to ensure the head branch exists.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              branch: {
+                type: 'string',
+                description: 'The branch name to check'
+              }
+            },
+            required: ['repo', 'branch']
+          }
+        }
       }
     ];
   }
@@ -546,14 +567,19 @@ Instructions:
 - For complex workflows, you can use multiple tools in sequence to accomplish the task
 - After each tool execution, analyze the result and decide if additional tools are needed
 - DO NOT provide additional commentary after tool execution unless specifically requested by the user
+- DO NOT use list_repos unless user specifically asks to see all repositories
+- When user asks to create something (PR, issue, branch), ask for required information instead of listing repositories
 
   PULL REQUEST WORKFLOW:
-  - When creating a pull request, FIRST check if there are uncommitted changes using check_changes_threshold
-  - If there are uncommitted changes, commit them first using commit_and_push with an appropriate message
-  - Then create a new branch using create_branch if needed
-  - Finally create the pull request using create_pr
-  - NEVER try to create a PR from a non-existent branch
-  - The head branch for PR creation must exist and have commits
+- When user asks to "create a new pr" or "create a pull request", FIRST ask for required information: repository, title, and description
+- DO NOT list all repositories unless specifically asked
+- If the user provides repository, title, and description, proceed with PR creation
+- If the user specifies exact head/base branches, check if head branch exists first
+- If the head branch doesn't exist, create it using create_branch
+- If there are uncommitted changes AND the user wants to include them in the PR, then check_changes_threshold and commit them
+- NEVER try to create a PR from a non-existent branch
+- The head branch for PR creation must exist and have commits
+- Only check for uncommitted changes when the user wants to include current changes in the PR
     
     COMMUNICATION STYLE:
     - Be very concise
@@ -811,6 +837,13 @@ Instructions:
       case 'check_git_status':
         return await this.executeCheckGitStatus();
       
+      case 'check_branch_exists':
+        return await this.githubClient.checkBranchExists({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          branch: parameters['branch']
+        });
+      
       default:
         return {
           success: false,
@@ -1027,6 +1060,15 @@ Instructions:
           return `📋 **Current Branch**: ${currentBranch}\n📝 **Status**: ${statusSummary}\n📁 **Staged**: ${stagedCount} files\n📁 **Unstaged**: ${unstagedCount} files`;
         }
         return `📋 **Current Branch**: ${currentBranch}\n✅ **Status**: ${statusSummary}`;
+
+      case 'check_branch_exists':
+        const branchExists = result.exists;
+        const branchName = result.branch || 'unknown';
+        if (branchExists) {
+          return `✅ Branch '${branchName}' exists`;
+        } else {
+          return `❌ Branch '${branchName}' does not exist`;
+        }
 
       default:
         return `✅ ${toolName} completed successfully`;
