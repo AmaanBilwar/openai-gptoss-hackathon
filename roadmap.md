@@ -10,6 +10,7 @@
 
 ## need immediate attention
 
+- [ ] compositional / sequential tool calling
 - [ ] auth with clerk
 - [ ] file manager
 - [ ] access repo and [pr numbers](issues.md)
@@ -22,6 +23,7 @@
 - [ ] llm response caching
 - [ ] llm rate limits
 - [ ] web dashboard
+    - [ ]  
 
 ---
 ## up for debate
