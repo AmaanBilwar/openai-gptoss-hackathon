@@ -1,11 +1,11 @@
-import React from 'react'
+import React from "react";
 
-type Props = {}
-
-const page = (props: Props) => {
+const page = () => {
   return (
-    <div>page</div>
-  )
-}
+    <main>
+      <div>main</div>
+    </main>
+  );
+};
 
-export default page
+export default page;
