@@ -16,11 +16,12 @@
 
 ## second in command
 ---
-
+ 
+- [ ] TUI 
 - [ ] understand + counter rate limits 
 - [ ] llm response caching
 - [ ] llm rate limits
-
+- [ ] web dashboard
 
 ---
 ## up for debate
@@ -31,6 +32,9 @@
 
 
 ---
+
+## miscellaneous
+
 
 - [ ] expand to other git hosts as well (gitlab, bitbucket etc)
 
