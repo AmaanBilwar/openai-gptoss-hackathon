@@ -64,7 +64,7 @@ Use the semantic analysis to understand the broader context and purpose of these
             content: context
           }
         ],
-        model: 'llama3.1-8b',
+        model: 'gpt-oss-120b',
         max_tokens: 200,
         temperature: 0.7
       });
