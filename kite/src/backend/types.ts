@@ -100,6 +100,26 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface CerebrasMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  tool_call_id?: string;
+}
+
+export interface CerebrasResponse {
+  choices: Array<{
+    message: CerebrasMessage;
+  }>;
+}
+
 export interface StreamingChunk {
   content?: string;
   tool_calls?: Array<{
@@ -193,6 +213,51 @@ export interface UnlockIssueArgs {
   owner: string;
   repo: string;
   issueNumber: number;
+}
+
+export interface GetPullRequestArgs {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+}
+
+export interface UpdatePullRequestArgs {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  title?: string;
+  body?: string;
+  state?: 'open' | 'closed';
+  base?: string;
+}
+
+export interface ListPullRequestCommitsArgs {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  perPage?: number;
+  page?: number;
+}
+
+export interface ListPullRequestFilesArgs {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  perPage?: number;
+  page?: number;
+}
+
+export interface CheckPullRequestMergedArgs {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+}
+
+export interface UpdatePullRequestBranchArgs {
+  owner: string;
+  repo: string;
+  pullNumber: number;
+  expectedHeadSha?: string;
 }
 
 // Zod Schemas for validation

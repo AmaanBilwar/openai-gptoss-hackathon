@@ -1,4 +1,4 @@
-import { IntelligentCommitSplitter } from './intelligentCommitSplitter';
+import { IntelligentCommitSplitter } from '../intelligentCommitSplitter';
 import dotenv from 'dotenv';
 
 // Load environment variables
