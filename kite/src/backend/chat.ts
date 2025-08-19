@@ -6,6 +6,7 @@ import { ChatMessage } from './types';
 import { validateConfig } from './config';
 import { TokenStore } from './tokenStore';
 import { openBrowser } from './utils';
+import { parseMarkdownToText } from './markdownParser';
 
 /**
  * Enhanced interactive chat mode with better Windows compatibility
@@ -99,9 +100,13 @@ export async function startInteractiveChat(): Promise<void> {
 
         // Add assistant response to conversation
         const assistantContent = responseChunks.join('');
+        
+        // Parse markdown content for better display and storage
+        const parsedContent = parseMarkdownToText(assistantContent);
+        
         messages.push({
           role: 'assistant',
-          content: assistantContent
+          content: parsedContent
         });
 
       } catch (error) {
