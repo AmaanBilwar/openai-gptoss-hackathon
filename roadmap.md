@@ -8,11 +8,14 @@
 
 ## need immediate attention
 
+- [x] auth with clerk - Ani
+- [ ] merge conflicts - Ani
+- [ ] rag commit feature - Vishesh 
+- [ ] add auth to cli (ts backend) - Amaan
 - [x] compositional / sequential tool calling - Amaan
-- [ ] all functions related to issues 
-- [ ] auth with clerk - Ani
-- [ ] access repo and [pr numbers](issues.md) - Vishesh
-    - [ ] file manager
+- [x] all functions related to issues - Amaan
+
+
 ## second in command
 ---
 
@@ -29,6 +32,7 @@
         - [ ] users  page
         - [ ] activity page  
     - [ ] login butons
+
 ---
 ## up for debate
 
