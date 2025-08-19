@@ -4,8 +4,6 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { SignOutButton, useUser, useSignIn } from "@clerk/nextjs";
 
-
-
 const page = () => {
   const { isLoaded, isSignedIn, user } = useUser();
   const router = useRouter();
@@ -13,15 +11,19 @@ const page = () => {
 
   const handleGithubSignIn = async () => {
     if (!isSignInLoaded) return;
+
+    // Check if user came from CLI (via URL parameter)
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromCLI = urlParams.get("from_cli") === "true";
+
     await signIn?.authenticateWithRedirect({
       strategy: "oauth_github",
       // This route must render <AuthenticateWithRedirectCallback />
       redirectUrl: "/sso-callback",
       // Where to land after successful sign-in
-  redirectUrlComplete: "/dashboard",
+      redirectUrlComplete: fromCLI ? "/cli-auth-success" : "/dashboard",
     });
   };
-
 
   if (!isLoaded) {
     return (
@@ -34,7 +36,17 @@ const page = () => {
   if (isSignedIn) {
     // If a signed-in user lands on "/", send them to the dashboard
     if (isLoaded) {
-      router.replace("/dashboard");
+      const urlParams = new URLSearchParams(window.location.search);
+      const fromCLI = urlParams.get("from_cli") === "true";
+
+      // Use useEffect to handle navigation to avoid setState during render
+      React.useEffect(() => {
+        if (fromCLI) {
+          router.replace("/cli-auth-success");
+        } else {
+          router.replace("/dashboard");
+        }
+      }, [fromCLI, router]);
     }
     return (
       <main className="min-h-screen flex items-center justify-center">
@@ -45,11 +57,11 @@ const page = () => {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center space-y-8">
-      <h1 className="text-4xl font-bold text-gray-800">Welcome to Kite</h1>
-
+      <h1 className="text-4xl font-bold text-gray-800 mb-1">Welcome to Kite</h1>
+      <p className="text-gray-600 mt-0">Beyond the Conflicts</p>
       <button
         onClick={handleGithubSignIn}
-        className="flex items-center space-x-3 bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-medium transition-colors shadow-lg"
+        className="flex cursor-pointer items-center space-x-3 bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-medium transition-colors shadow-lg"
       >
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path
