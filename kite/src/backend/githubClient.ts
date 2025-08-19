@@ -642,6 +642,39 @@ export class GitHubClient {
   }
 
   /**
+   * List commits in a repository
+   */
+  async listRepositoryCommits(args: { owner: string; repo: string; branch?: string; perPage?: number; page?: number }): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: commits } = await octokit.repos.listCommits({
+        owner: args.owner,
+        repo: args.repo,
+        sha: args.branch || 'main',
+        per_page: args.perPage || 10,
+        page: args.page || 1
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch || 'main',
+        commit_count: commits.length,
+        commits: commits,
+        result: commits
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch || 'main'
+      };
+    }
+  }
+
+  /**
    * List files changed in a pull request
    */
   async listPullRequestFiles(args: ListPullRequestFilesArgs): Promise<ToolResult> {

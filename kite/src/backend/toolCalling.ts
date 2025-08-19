@@ -10,6 +10,7 @@ import {
   CerebrasResponse
 } from './types';
 import { CEREBRAS_API_KEY, validateConfig } from './config';
+import { parseMarkdownToText } from './markdownParser';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -543,6 +544,31 @@ export class GPTOSSToolCaller {
             required: ['repo', 'branch']
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_repository_commits',
+          description: 'List recent commits in a repository. Use this to see commit history, latest commits, or specific branch commits.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              branch: {
+                type: 'string',
+                description: 'The branch to list commits from (default: main)'
+              },
+              per_page: {
+                type: 'integer',
+                description: 'Number of commits to return (default: 10, max: 100)'
+              }
+            },
+            required: ['repo']
+          }
+        }
       }
     ];
   }
@@ -846,6 +872,14 @@ Instructions:
       case 'check_git_status':
         return await this.executeCheckGitStatus();
       
+      case 'list_repository_commits':
+        return await this.githubClient.listRepositoryCommits({
+          owner: parameters['repo']?.split('/')[0],
+          repo: parameters['repo']?.split('/')[1] || parameters['repo'],
+          branch: parameters['branch'],
+          perPage: parameters['per_page']
+        });
+      
       case 'check_branch_exists':
         return await this.githubClient.checkBranchExists({
           owner: parameters['repo']?.split('/')[0],
@@ -1070,6 +1104,19 @@ Instructions:
         }
         return `📋 **Current Branch**: ${currentBranch}\n✅ **Status**: ${statusSummary}`;
 
+      case 'list_repository_commits':
+        const repoCommits = result.commits || [];
+        if (repoCommits.length === 0) {
+          return `📋 No commits found in repository ${result.repo}`;
+        }
+        const repoCommitList = repoCommits.map((commit: any) => {
+          const commitDate = new Date(commit.commit.author.date).toLocaleDateString();
+          const shortSha = commit.sha.substring(0, 7);
+          const message = commit.commit.message.split('\n')[0];
+          return `• ${shortSha} - ${message} (${commitDate})`;
+        }).join('\n');
+        return `📋 Found ${repoCommits.length} commit${repoCommits.length === 1 ? '' : 's'} in ${result.repo}${result.branch ? ` (${result.branch} branch)` : ''}:\n${repoCommitList}`;
+
       case 'check_branch_exists':
         const branchExists = result.exists;
         const branchName = result.branch || 'unknown';
@@ -1135,7 +1182,9 @@ Instructions:
         if (!message.tool_calls || message.tool_calls.length === 0) {
           // Only yield content if it's meaningful and not just tool execution commentary
           if (message.content && message.content.trim()) {
-            yield message.content;
+            // Parse markdown content for better display
+            const parsedContent = parseMarkdownToText(message.content);
+            yield parsedContent;
           }
           break;
         }
@@ -1243,7 +1292,7 @@ Instructions:
         
         // If no tool calls, we're done
         if (!message.tool_calls || message.tool_calls.length === 0) {
-          finalResponse = message.content || '';
+          finalResponse = message.content ? parseMarkdownToText(message.content) : '';
           break;
         }
         
