@@ -15,12 +15,14 @@ export default function UpsertUserOnAuth() {
   const { isLoaded, isSignedIn, user } = useUser();
   const currentUser = useQuery(api.users.getCurrentUser);
   const upsertUser = useMutation(api.users.upsertUser);
+  const addRepo = useMutation(api.repositories.addRepository);
+  const syncedRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     // undefined = loading, null = not found
     if (currentUser === undefined) return;
-    if (currentUser !== null) return;
+    if (syncedRef.current) return;
 
     // github external account info
     const githubAccount = user?.externalAccounts?.find(
@@ -49,11 +51,52 @@ export default function UpsertUserOnAuth() {
       avatar,
     });
 
-    upsertUser({ name, email, avatar }).catch((err) => {
-      // Best-effort logging; avoid throwing in effect
-      console.error("Failed to upsert user into Convex:", err);
-    });
-  }, [isLoaded, isSignedIn, user, currentUser, upsertUser]);
+    (async () => {
+      try {
+        // First ensure the user exists in Convex with base info
+        await upsertUser({ name, email, avatar });
+
+        // Then fetch GitHub data from our server route and sync to Convex
+        const res = await fetch("/api/github/sync");
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.error || `GitHub sync failed with status ${res.status}`);
+        }
+        const data = await res.json();
+        const me = data.me;
+        const repos: any[] = data.repos ?? [];
+
+        // Patch user with richer GitHub profile fields
+        await upsertUser({
+          name,
+          email,
+          avatar: data.avatar_url || avatar,
+          bio: data.bio || undefined,
+          location: data.location || undefined,
+          followers: data.followersCount ?? undefined,
+          following: data.followingCount ?? undefined,
+          githubUsername: data.githubUsername || me?.login || undefined,
+        });
+
+        // Save repositories (idempotent)
+        await Promise.allSettled(
+          repos.map((r) =>
+            addRepo({
+              name: r.name,
+              fullName: r.full_name,
+              url: r.html_url,
+              description: r.description ?? undefined,
+              isPrivate: !!r.private,
+            })
+          )
+        );
+      } catch (err) {
+        console.error("Auth-time GitHub sync failed:", err);
+      } finally {
+        syncedRef.current = true;
+      }
+    })();
+  }, [isLoaded, isSignedIn, user, currentUser, upsertUser, addRepo]);
 
   return null;
 }
