@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "bun run dev:frontend & bun run dev:convex",
+    "dev": "bun run dev:frontend && bun run dev:convex",
     "dev:frontend": "next dev --turbopack",
     "dev:convex": "bunx convex dev",
     "build": "next build",
@@ -13,6 +13,9 @@
     "backend:build": "tsc --project src/backend/tsconfig.json",
     "backend:start": "node dist/backend/main.js",
     "chat": "tsx src/backend/chat.ts",
+    "auth": "tsx src/backend/auth.ts",
+    "auth:status": "tsx src/backend/auth.ts status",
+    "auth:logout": "tsx src/backend/auth.ts logout",
     "test-input": "tsx src/backend/test-input.ts",
     "test-intelligent-split": "tsx src/backend/test-intelligent-split.ts"
   },
