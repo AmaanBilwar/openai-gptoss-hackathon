@@ -14,6 +14,7 @@
 
 - [ ] merge conflicts - Ani
 - [ ] rag commit feature - Vishesh
+    - [ ] pr reviewer feature can utilize the rag features to integrate it - Vishesh 
 - [ ] add auth to cli (ts backend) - Amaan
 - [ ] Infinite Chat - Amaan
 
