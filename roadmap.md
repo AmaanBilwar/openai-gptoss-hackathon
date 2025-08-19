@@ -4,22 +4,23 @@
 - [x] core github functions
 - [x] rewrite in typescript
 - [x] add fallback responses in the system prompt
----
-
-## need immediate attention
-
 - [x] auth with clerk - Ani
-- [ ] merge conflicts - Ani
-- [ ] rag commit feature - Vishesh 
-- [ ] add auth to cli (ts backend) - Amaan
 - [x] compositional / sequential tool calling - Amaan
 - [x] all functions related to issues - Amaan
 
-
-## second in command
 ---
+## need immediate attention
 
-- [ ] TUI 
+
+- [ ] merge conflicts - Ani
+- [ ] rag commit feature - Vishesh
+- [ ] add auth to cli (ts backend) - Amaan
+- [ ] Infinite Chat - Amaan
+
+---
+## second in command
+
+- [ ] TUI - Vishesh
 - [ ] understand + counter rate limits 
 - [ ] llm response caching
 - [ ] llm rate limits
