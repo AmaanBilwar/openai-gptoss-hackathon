@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 *.env 
 
 .python-version
@@ -6,3 +7,10 @@ __pycache__/
 
 
 *.venv
+=======
+*.env
+*.venv
+.python-version
+
+__pycache__/
+>>>>>>> origin/main
