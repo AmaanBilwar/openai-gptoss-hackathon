@@ -7,6 +7,11 @@ export default defineSchema({
     name: v.string(),
     email: v.string(),
     avatar: v.optional(v.string()),
+  bio: v.optional(v.string()),
+  location: v.optional(v.string()),
+  followers: v.optional(v.number()), // follower count
+  following: v.optional(v.number()), // following count
+  githubUsername: v.optional(v.string()),
   }).index("by_user_id", ["userId"]),
 
   chats: defineTable({

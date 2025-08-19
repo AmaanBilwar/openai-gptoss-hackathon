@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest) {
   // Provider name should be 'github' (without oauth_ prefix per Clerk deprecation notice)
   const tokens = await client.users.getUserOauthAccessToken(userId, "github");
   const token = tokens?.data?.[0]?.token;
-  console.log("Fetched GitHub token from Clerk:", !!token);
+  // Do not log or expose the raw token
 
   if (!token) {
     return NextResponse.json(
@@ -48,10 +48,11 @@ export async function GET(_req: NextRequest) {
       me,
       reposCount: repos.length,
       repos,
-      tokenUsed: token, // For debugging; do NOT expose token in frontend!
       bio,
-      followers,
-      following,
-      location
+      followersCount: followers.length,
+      followingCount: following.length,
+      avatar_url,
+      githubUsername: me.login,
+      location,
     });
   }

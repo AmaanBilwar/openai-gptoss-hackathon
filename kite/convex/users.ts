@@ -34,6 +34,11 @@ export const upsertUser = mutation({
     name: v.string(),
     email: v.string(),
     avatar: v.optional(v.string()),
+  bio: v.optional(v.string()),
+  location: v.optional(v.string()),
+  followers: v.optional(v.number()),
+  following: v.optional(v.number()),
+  githubUsername: v.optional(v.string()),
   },
   returns: v.id("users"),
   handler: async (ctx, args) => {
@@ -51,6 +56,11 @@ export const upsertUser = mutation({
         name: args.name,
         email: args.email,
         avatar: args.avatar,
+  bio: args.bio,
+  location: args.location,
+  followers: args.followers,
+  following: args.following,
+  githubUsername: args.githubUsername,
       });
       return existingUser._id;
     } else {
@@ -59,7 +69,12 @@ export const upsertUser = mutation({
         userId: identity.subject,
         name: args.name,
         email: args.email,
-        avatar: args.avatar,
+  avatar: args.avatar,
+  bio: args.bio,
+  location: args.location,
+  followers: args.followers,
+  following: args.following,
+  githubUsername: args.githubUsername,
       });
     }
   },
