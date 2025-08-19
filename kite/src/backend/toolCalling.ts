@@ -413,7 +413,7 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'merge_pr',
-          description: 'Merge a pull request.',
+          description: 'Merge a pull request. Use this when user asks to merge a PR. You need the repository name and pull request number.',
           parameters: {
             type: 'object',
             properties: {
@@ -571,6 +571,9 @@ Instructions:
 - When user asks to create something (PR, issue, branch), ask for required information instead of listing repositories
 - NEVER assume branch names, repository names, or any other parameters - always ask the user
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
+- When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
+- When user asks to "commit and push", use commit_and_push tool, NOT check_changes_threshold or check_git_status
+- Always use the most specific tool for the task - don't use generic tools when specific ones exist
 
 
     
