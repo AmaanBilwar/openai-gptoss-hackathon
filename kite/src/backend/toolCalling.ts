@@ -469,13 +469,17 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'commit_and_push',
-          description: 'Commit and push changes to GitHub. This is the PRIMARY tool for committing and pushing code. Use this when user provides a commit message or wants to push changes. ALWAYS check conversation history for commit message if user provided one. Includes automatic threshold checking and intelligent commit splitting for large changes.',
+          description: 'Commit and push changes to GitHub. This is the PRIMARY tool for committing and pushing code. Use this when user provides a commit message or wants to push changes. ALWAYS check conversation history for commit message if user provided one. Includes automatic threshold checking and intelligent commit splitting for large changes. If a branch parameter is provided, it will create and switch to that branch before committing.',
           parameters: {
             type: 'object',
             properties: {
               commit_message: {
                 type: 'string',
                 description: 'The commit message to use (required for regular commits)'
+              },
+              branch: {
+                type: 'string',
+                description: 'The branch to create and switch to before committing (optional, uses current branch if not specified)'
               },
               files: {
                 type: 'array',
@@ -586,6 +590,7 @@ Instructions:
 - Be precise with repository names and parameters
 - When user provides a commit message, use commit_and_push tool (not checkout_branch)
 - When user wants to push changes, use commit_and_push tool
+- When user wants to commit and push to a new branch, use commit_and_push tool with branch parameter
 - Only use checkout_branch when user specifically wants to switch branches without committing
 - ALWAYS check conversation history for commit messages, repository names, and other parameters
 - If user provided information in previous messages, use that information in tool calls
@@ -599,6 +604,7 @@ Instructions:
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
 - When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
 - When user asks to "commit and push", use commit_and_push tool, NOT check_changes_threshold or check_git_status
+- When user asks to "commit and push to [branch name]", use commit_and_push tool with branch parameter
 - Always use the most specific tool for the task - don't use generic tools when specific ones exist
 
 
@@ -651,8 +657,9 @@ Instructions:
     COMMIT WORKFLOW:
     - When user says "push code" or "commit and push" → Use commit_and_push tool
     - When user provides a commit message → Use commit_and_push tool
+    - When user wants to commit and push to a new branch → Use commit_and_push tool with branch parameter
     - When user wants to switch branches only → Use checkout_branch tool
-    - commit_and_push tool handles branch switching automatically if needed
+    - commit_and_push tool handles branch creation and switching automatically if needed
     - ALWAYS extract commit message from conversation history if user provided one
     - If user provided commit message in previous messages, use that message in commit_and_push tool
 
@@ -1084,7 +1091,8 @@ Instructions:
         if (result.action === 'intelligent_split_executed') {
           return `🚀 Large changes detected (${result.threshold_analysis?.total_changes} lines). Successfully executed intelligent commit splitting.`;
         }
-        return `✅ Successfully committed changes with message: '${result.commit_message}'\n${result.pushed ? '📤 Pushed to remote' : '📤 Not pushed (auto_push disabled)'}`;
+        const branchInfo = result.branch_created ? `\n🌿 Created and switched to branch: '${result.branch_created}'` : '';
+        return `✅ Successfully committed changes with message: '${result.commit_message}'${branchInfo}\n${result.pushed ? '📤 Pushed to remote' : '📤 Not pushed (auto_push disabled)'}`;
 
       case 'check_changes_threshold':
         const totalChanges = result.total_changes || 0;
@@ -1434,9 +1442,30 @@ Instructions:
         };
       }
       
+      const branch = parameters.branch || null;
       const files = parameters.files || null;
       const autoPush = parameters.auto_push !== false; // default to true
       const forceIntelligentSplit = parameters.force_intelligent_split || false;
+      
+      // If a branch is specified, create and switch to it
+      if (branch) {
+        try {
+          // Get current branch to use as base
+          const { stdout: currentBranch } = await this.execAsync('git branch --show-current');
+          const baseBranch = currentBranch.trim();
+          
+          // Create and switch to the new branch
+          await this.execAsync(`git checkout -b ${branch}`);
+          
+          console.log(`✅ Created and switched to branch: ${branch}`);
+        } catch (branchError) {
+          return {
+            success: false,
+            error: `Failed to create and switch to branch '${branch}': ${branchError}`,
+            suggestion: 'Check if the branch name is valid and you have the necessary permissions'
+          };
+        }
+      }
       
       // First check if there are any changes
       const { stdout: statusOutput } = await this.execAsync('git status --porcelain');
@@ -1519,10 +1548,11 @@ Instructions:
           success: true,
           action: 'regular_commit',
           commit_message: commitMessage,
+          branch_created: branch || null,
           files_committed: files || 'all changes',
           pushed: autoPush,
           push_output: pushOutput,
-          message: `Successfully committed changes with message: '${commitMessage}'`
+          message: `Successfully committed changes with message: '${commitMessage}'${branch ? ` to branch '${branch}'` : ''}`
         };
         
       } catch (error) {
