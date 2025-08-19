@@ -1,4 +1,4 @@
-import { GPTOSSToolCaller } from './toolCalling';
+import { GPTOSSToolCaller } from '../toolCalling';
 
 /**
  * Test script for the new pull request endpoints

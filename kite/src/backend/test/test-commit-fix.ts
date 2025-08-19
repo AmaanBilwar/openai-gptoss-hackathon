@@ -1,4 +1,4 @@
-import { GPTOSSToolCaller } from './toolCalling';
+import { GPTOSSToolCaller } from '../toolCalling';
 import dotenv from 'dotenv';
 
 // Load environment variables

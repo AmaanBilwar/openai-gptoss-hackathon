@@ -1,4 +1,4 @@
-import { SupermemoryClient } from './supermemoryClient';
+import { SupermemoryClient } from '../supermemoryClient';
 import dotenv from 'dotenv';
 
 // Load environment variables
