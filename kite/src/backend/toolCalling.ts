@@ -1,7 +1,8 @@
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { GitHubClient } from './githubClient';
 import { IntelligentCommitSplitter } from './intelligentCommitSplitter';
-import { suggestAndApplyConflictResolutionsToFile } from './mergeConflict';
+import { suggestAndApplyConflictResolutionsToFile, resolveMergeConflictsUnderPath } from './mergeConflict';
+import * as fs from 'fs';
 import {
   ChatMessage,
   ToolDefinition,
@@ -54,13 +55,13 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'list_pull_requests',
-          description: 'List pull requests for a given repository. Can filter by state (open, closed, or all).',
+          description: 'List pull requests for a repository. Auto-detects current repository if not specified.',
           parameters: {
             type: 'object',
             properties: {
               repo: {
                 type: 'string',
-                description: 'The repository name in \'owner/repo\' format'
+                description: 'The repository name in \'owner/repo\' format (optional, auto-detected from current directory)'
               },
               state: {
                 type: 'string',
@@ -68,7 +69,7 @@ export class GPTOSSToolCaller {
                 enum: ['open', 'closed', 'all']
               }
             },
-            required: ['repo']
+            required: []
           }
         }
       },
@@ -260,13 +261,13 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'create_pr',
-          description: 'Create a pull request for a given repository. ONLY use this after confirming: 1) Head branch exists, 2) User has provided all required info (repo, title, description, head, base), 3) Any uncommitted changes have been handled. NEVER assume branch names - always get them from user.',
+          description: 'Create a pull request. Auto-detects current repository if not specified. ONLY use this after confirming: 1) Head branch exists, 2) User has provided all required info, 3) Any uncommitted changes have been handled.',
           parameters: {
             type: 'object',
             properties: {
               repo: {
                 type: 'string',
-                description: 'The repository name in \'owner/repo\' format'
+                description: 'The repository name in \'owner/repo\' format (optional, auto-detected from current directory)'
               },
               title: {
                 type: 'string',
@@ -285,7 +286,7 @@ export class GPTOSSToolCaller {
                 description: 'The base branch (defaults to \'main\')'
               }
             },
-            required: ['repo', 'title', 'body']
+            required: ['title', 'body']
           }
         }
       },
@@ -579,20 +580,24 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'resolve_merge_conflicts',
-          description: 'Resolve merge conflicts in a file. Use this when user asks to resolve merge conflicts.',
+          description: 'Resolve merge conflicts in a specific file or all files under a path. Auto-detects current repository if not specified.',
           parameters: {
             type: 'object',
             properties: {
               repo: {
                 type: 'string',
-                description: 'The repository name in \'owner/repo\' format'
+                description: 'The repository name in \'owner/repo\' format (optional, auto-detected from current directory)'
               },
-              file: {
+              path: {
                 type: 'string',
-                description: 'The file to resolve merge conflicts in'
+                description: 'File or directory to resolve merge conflicts in (defaults to current directory)'
+              },
+              preview_only: {
+                type: 'boolean',
+                description: 'If true, do not write files; just compute resolutions'
               }
             },
-            required: ['repo', 'file']
+            required: []
           }
         }
       },
@@ -711,16 +716,19 @@ Instructions:
    * Execute a tool call
    */
   public async executeTool(toolName: string, parameters: Record<string, any>): Promise<ToolResult> {
+    // Enhance parameters with auto-detected repository
+    const toolParameters = await this.toolParameters(toolName, parameters);
+    
     switch (toolName) {
       case 'list_repos':
         return await this.githubClient.listRepos();
       
       case 'checkout_branch':
         {
-          const branchResult = await this.githubClient.checkoutBranch(parameters['repo'], parameters['branch']);
+          const branchResult = await this.githubClient.checkoutBranch(toolParameters['repo'], toolParameters['branch']);
           // Attempt local checkout as well for immediate usability
           try {
-            const targetBranch = parameters['branch'];
+            const targetBranch = toolParameters['branch'];
             // Ensure we have the latest refs for that branch
             await this.execAsync(`git fetch origin ${targetBranch}`);
             // Check if local branch already exists
@@ -909,7 +917,45 @@ Instructions:
         });
       
       case 'resolve_merge_conflicts':
-        await suggestAndApplyConflictResolutionsToFile(parameters['file']);
+        {
+          const targetPath = parameters['path'] || process.cwd();
+          const previewOnly = parameters['preview_only'] || false;
+          try {
+            if (previewOnly) {
+              const summary = await resolveMergeConflictsUnderPath(targetPath, true);
+              return {
+                success: true,
+                action: 'preview',
+                summary
+              } as ToolResult;
+            } else {
+              // If a single file path provided, fast-path to file resolver
+              try {
+                const stat = await fs.promises.stat(targetPath);
+                if (stat.isFile()) {
+                  const writtenPath = await suggestAndApplyConflictResolutionsToFile(targetPath);
+                  return {
+                    success: true,
+                    action: 'file_resolved',
+                    path: writtenPath
+                  } as ToolResult;
+                }
+              } catch {}
+              const summary = await resolveMergeConflictsUnderPath(targetPath, false);
+              return {
+                success: true,
+                action: 'applied',
+                summary
+              } as ToolResult;
+            }
+          } catch (error) {
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              suggestion: 'Ensure the path exists and there are conflict markers present'
+            };
+          }
+        }
       
       case 'check_branch_exists':
         return await this.githubClient.checkBranchExists({
@@ -1769,6 +1815,60 @@ Instructions:
   private async execAsync(command: string): Promise<{ stdout: string; stderr: string }> {
     const execAsync = promisify(exec);
     return await execAsync(command);
+  }
+
+  /**
+   * Get the current repository information from git config
+   */
+  private async getCurrentRepository(): Promise<{ owner: string; repo: string; fullName: string } | null> {
+    try {
+      const { stdout: remoteUrl } = await this.execAsync('git config --get remote.origin.url');
+      const url = remoteUrl.trim();
+      
+      if (!url) return null;
+      
+      // Parse GitHub URL (both HTTPS and SSH formats)
+      const match = url.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+      if (match) {
+        const [, owner, repo] = match;
+        const cleanRepo = repo.replace('.git', '');
+        return { owner, repo: cleanRepo, fullName: `${owner}/${cleanRepo}` };
+      }
+      
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Enhance tool parameters with default repository if not provided
+   */
+  private async toolParameters(toolName: string, parameters: Record<string, any>): Promise<Record<string, any>> {
+    const toolParameters = { ...parameters };
+    
+    // If tool needs repo and none provided, use current repo
+    if (!toolParameters.repo && this.toolRequiresRepo(toolName)) {
+      const repoInfo = await this.getCurrentRepository();
+      if (repoInfo) {
+        toolParameters.repo = repoInfo.fullName;
+      }
+    }
+    
+    return toolParameters;
+  }
+
+  /**
+   * Check if a tool requires a repo parameter
+   */
+  private toolRequiresRepo(toolName: string): boolean {
+    return [
+      'list_pull_requests', 'get_pull_request', 'update_pull_request',
+      'list_pull_request_commits', 'list_pull_request_files', 'check_pull_request_merged',
+      'update_pull_request_branch', 'create_pr', 'create_issue', 'create_branch',
+      'list_issues', 'get_issue', 'update_issue', 'merge_pr',
+      'list_repository_commits', 'check_branch_exists'
+    ].includes(toolName);
   }
 
   /**

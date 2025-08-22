@@ -226,4 +226,65 @@ export async function suggestAndApplyConflictResolutionsToFile(inputPath: string
   return await applyUpdateSnippetToFile(absIn, updateSnippet, instruction);
 }
 
+/**
+ * Recursively resolve merge conflicts under a directory. Returns a summary of results.
+ */
+export async function resolveMergeConflictsUnderPath(rootPath: string, previewOnly: boolean = false): Promise<{
+  processed: number;
+  withConflicts: number;
+  resolved: number;
+  errors: number;
+  results: Array<{ file: string; hadConflict: boolean; resolved: boolean; written: boolean; error?: string }>;
+}> {
+  const absRoot = path.resolve(rootPath);
+  const ignoreDirs = new Set(['node_modules', '.git', '.next', 'dist', 'build', '.turbo', '.cache']);
+
+  async function* walk(dir: string): AsyncGenerator<string> {
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!ignoreDirs.has(entry.name)) {
+          yield* walk(full);
+        }
+      } else if (entry.isFile()) {
+        yield full;
+      }
+    }
+  }
+
+  const results: Array<{ file: string; hadConflict: boolean; resolved: boolean; written: boolean; error?: string }> = [];
+  let processed = 0;
+  let withConflicts = 0;
+  let resolved = 0;
+  let errors = 0;
+
+  for await (const file of walk(absRoot)) {
+    processed++;
+    try {
+      const content = await fs.promises.readFile(file, 'utf8');
+      const has = hasConflictMarkers(content);
+      if (!has) {
+        results.push({ file, hadConflict: false, resolved: false, written: false });
+        continue;
+      }
+      withConflicts++;
+      const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(content, file);
+      if (previewOnly) {
+        await applyUpdateSnippetToContent(content, updateSnippet, instruction);
+        results.push({ file, hadConflict: true, resolved: true, written: false });
+        resolved++;
+      } else {
+        await applyUpdateSnippetToFile(file, updateSnippet, instruction);
+        results.push({ file, hadConflict: true, resolved: true, written: true });
+        resolved++;
+      }
+    } catch (err) {
+      errors++;
+      results.push({ file, hadConflict: false, resolved: false, written: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  return { processed, withConflicts, resolved, errors, results };
+}
 
