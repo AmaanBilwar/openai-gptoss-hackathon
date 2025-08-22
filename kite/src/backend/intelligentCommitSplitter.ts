@@ -305,9 +305,9 @@ export class IntelligentCommitSplitter {
     // Analyze results to group files
     // For now, use a simple heuristic-based grouping
     // In a full implementation, you'd parse the semantic analysis results
-    const commitGroups = this.groupChangesHeuristic(changes, semanticSummary);
+    const commitGroups = await this.groupChangesHeuristic(changes, semanticSummary);
 
-    return [commitGroups as unknown as CommitGroup[], semanticSummary];
+    return [commitGroups, semanticSummary];
   }
 
   /**
@@ -535,10 +535,8 @@ export class IntelligentCommitSplitter {
         await this.supermemory.deleteMemoriesBatch(memoryIds);
       }
 
-      // Step 6: Execute if requested
-      if (autoPush) {
-        await this.executeCommitSplitting(commitGroups, autoPush);
-      }
+      // Step 6: Execute commit splitting
+      await this.executeCommitSplitting(commitGroups, autoPush);
 
       return commitGroups;
 
