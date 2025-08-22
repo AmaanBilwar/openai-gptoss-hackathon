@@ -1,6 +1,7 @@
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { GitHubClient } from './githubClient';
 import { IntelligentCommitSplitter } from './intelligentCommitSplitter';
+import { suggestAndApplyConflictResolutionsToFile } from './mergeConflict';
 import {
   ChatMessage,
   ToolDefinition,
@@ -573,7 +574,28 @@ export class GPTOSSToolCaller {
             required: ['repo']
           }
         }
-      }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'resolve_merge_conflicts',
+          description: 'Resolve merge conflicts in a file. Use this when user asks to resolve merge conflicts.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              file: {
+                type: 'string',
+                description: 'The file to resolve merge conflicts in'
+              }
+            },
+            required: ['repo', 'file']
+          }
+        }
+      },
     ];
   }
 
@@ -680,7 +702,6 @@ Instructions:
     7. Create the PR using create_pr
     8. NEVER try to create a PR from a non-existent branch
     9. NEVER make assumptions about branch names - always ask the user
-
 
 
     Reasoning: ${reasoningLevel}`;
@@ -886,6 +907,9 @@ Instructions:
           branch: parameters['branch'],
           perPage: parameters['per_page']
         });
+      
+      case 'resolve_merge_conflicts':
+        await suggestAndApplyConflictResolutionsToFile(parameters['file']);
       
       case 'check_branch_exists':
         return await this.githubClient.checkBranchExists({
