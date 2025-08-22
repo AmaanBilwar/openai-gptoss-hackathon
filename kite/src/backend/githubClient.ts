@@ -786,6 +786,41 @@ export class GitHubClient {
   }
 
   /**
+   * Get a specific commit with patch data
+   */
+  async getCommit(args: { owner: string; repo: string; commit_sha: string }): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: commit } = await octokit.repos.getCommit({
+        owner: args.owner,
+        repo: args.repo,
+        ref: args.commit_sha
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        sha: args.commit_sha,
+        message: commit.commit.message,
+        author: commit.commit.author?.name,
+        committer: commit.commit.committer?.name,
+        stats: commit.stats,
+        files: commit.files,
+        data: commit,
+        result: commit
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        sha: args.commit_sha
+      };
+    }
+  }
+
+  /**
    * Check if a branch exists
    */
   async checkBranchExists(args: { owner: string; repo: string; branch: string }): Promise<ToolResult> {

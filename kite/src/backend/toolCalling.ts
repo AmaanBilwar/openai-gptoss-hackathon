@@ -1,6 +1,7 @@
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { GitHubClient } from './githubClient';
 import { IntelligentCommitSplitter } from './intelligentCommitSplitter';
+import { RAGClient } from './ragClient';
 import {
   ChatMessage,
   ToolDefinition,
@@ -9,7 +10,7 @@ import {
   CerebrasMessage,
   CerebrasResponse
 } from './types';
-import { CEREBRAS_API_KEY, validateConfig } from './config';
+import { CEREBRAS_API_KEY, NEXT_PUBLIC_CONVEX_URL, validateConfig } from './config';
 import { parseMarkdownToText } from './markdownParser';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -22,6 +23,7 @@ export class GPTOSSToolCaller {
   private modelId: string;
   private client: Cerebras;
   private githubClient: GitHubClient;
+  private ragClient: RAGClient | null;
   private tools: ToolDefinition[];
 
   constructor(modelId: string = 'gpt-oss-120b') {
@@ -34,6 +36,9 @@ export class GPTOSSToolCaller {
       apiKey: CEREBRAS_API_KEY
     });
     this.githubClient = new GitHubClient();
+    
+    // Initialize RAG client if Convex URL is available
+    this.ragClient = NEXT_PUBLIC_CONVEX_URL ? new RAGClient(NEXT_PUBLIC_CONVEX_URL, CEREBRAS_API_KEY) : null;
     
     // Define available tools
     this.tools = [
@@ -573,6 +578,56 @@ export class GPTOSSToolCaller {
             required: ['repo']
           }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'ask_commit',
+          description: 'Ask questions about a specific commit using RAG (Retrieval-Augmented Generation). This tool can answer questions about what changed, why changes were made, and the implications of the changes.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              sha: {
+                type: 'string',
+                description: 'The commit SHA to ask questions about'
+              },
+              question: {
+                type: 'string',
+                description: 'The question to ask about the commit (e.g., "What security vulnerabilities were introduced?", "Why was this function refactored?")'
+              }
+            },
+            required: ['repo', 'sha', 'question']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'ask_pr',
+          description: 'Ask questions about a specific pull request using RAG (Retrieval-Augmented Generation). This tool can answer questions about the changes, reviews, and discussions in the PR.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format'
+              },
+              pr_number: {
+                type: 'integer',
+                description: 'The pull request number to ask questions about'
+              },
+              question: {
+                type: 'string',
+                description: 'The question to ask about the PR (e.g., "What are the main changes?", "Are there any performance implications?")'
+              }
+            },
+            required: ['repo', 'pr_number', 'question']
+          }
+        }
       }
     ];
   }
@@ -581,7 +636,7 @@ export class GPTOSSToolCaller {
    * System prompt for the AI assistants
    */
   private getSystemPrompt(reasoningLevel: string = 'medium'): string {
-    return `Your name is Kite and you're an expert GitHub repository management assistant powered by GPT-OSS. You have access to tools for managing repositories, branches, issues, and pull requests.
+    return `Your name is Kite and you're an expert GitHub repository management assistant powered by GPT-OSS. You have access to tools for managing repositories, branches, issues, pull requests, and RAG-powered Q&A for commits and PRs.
 
 CRITICAL: When executing tools, ONLY execute the tool and return the result. DO NOT add any additional commentary, explanations, or text after tool execution. The tool results are complete and self-explanatory. If you need to use a tool, do not include any text content in your response - only use the tool. NEVER generate text content when using tools - only call the tool and stop. IMPORTANT: When you use a tool, do not write any text in the content field - only make the tool call.
 
@@ -606,6 +661,12 @@ Instructions:
 - When user asks to "commit and push", use commit_and_push tool, NOT check_changes_threshold or check_git_status
 - When user asks to "commit and push to [branch name]", use commit_and_push tool with branch parameter
 - Always use the most specific tool for the task - don't use generic tools when specific ones exist
+
+RAG Q&A CAPABILITIES:
+- Use ask_commit tool when user asks questions about specific commits (e.g., "What changed in commit abc123?", "Why was this function refactored in commit def456?")
+- Use ask_pr tool when user asks questions about specific pull requests (e.g., "What are the main changes in PR #123?", "Are there any performance implications in PR #456?")
+- RAG tools provide intelligent answers based on code analysis, commit messages, and context
+- These tools work best when the repository has been indexed with the RAG system
 
 
     
@@ -894,6 +955,24 @@ Instructions:
           branch: parameters['branch']
         });
       
+      case 'ask_commit':
+        if (!this.ragClient) {
+          return {
+            success: false,
+            error: 'RAG functionality not available. Please set NEXT_PUBLIC_CONVEX_URL environment variable.'
+          };
+        }
+        return await this.ragClient.askCommit(parameters['repo'], parameters['sha'], parameters['question']);
+      
+      case 'ask_pr':
+        if (!this.ragClient) {
+          return {
+            success: false,
+            error: 'RAG functionality not available. Please set NEXT_PUBLIC_CONVEX_URL environment variable.'
+          };
+        }
+        return await this.ragClient.askPR(parameters['repo'], parameters['pr_number'], parameters['question']);
+      
       default:
         return {
           success: false,
@@ -1133,6 +1212,20 @@ Instructions:
         } else {
           return `❌ Branch '${branchName}' does not exist`;
         }
+
+      case 'ask_commit':
+        const commitAnswer = result.answer;
+        if (!commitAnswer) {
+          return '❌ Could not find an answer for the commit question.';
+        }
+        return `📋 **Commit Answer**: ${commitAnswer}`;
+
+      case 'ask_pr':
+        const prAnswer = result.answer;
+        if (!prAnswer) {
+          return '❌ Could not find an answer for the PR question.';
+        }
+        return `📋 **PR Answer**: ${prAnswer}`;
 
       default:
         return `✅ ${toolName} completed successfully`;

@@ -13,12 +13,14 @@ export interface EnvironmentConfig {
   GITHUB_CLIENT_ID: string;
   CEREBRAS_API_KEY: string;
   GITHUB_API_URL?: string;
+  NEXT_PUBLIC_CONVEX_URL?: string;
 }
 
 export const config: EnvironmentConfig = {
   GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID || '',
   CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY || '',
-  GITHUB_API_URL: process.env.GITHUB_API_URL || 'https://api.github.com'
+  GITHUB_API_URL: process.env.GITHUB_API_URL || 'https://api.github.com',
+  NEXT_PUBLIC_CONVEX_URL: process.env.NEXT_PUBLIC_CONVEX_URL || ''
 };
 
 // Validate required environment variables
@@ -31,10 +33,11 @@ export function validateConfig(): void {
       `Missing required environment variables: ${missing.join(', ')}\n` +
       `Please create a .env file in the kite directory with these variables:\n` +
       `GITHUB_CLIENT_ID=your_github_client_id\n` +
-      `CEREBRAS_API_KEY=your_cerebras_api_key`
+      `CEREBRAS_API_KEY=your_cerebras_api_key\n` +
+      `NEXT_PUBLIC_CONVEX_URL=your_convex_url (optional, for RAG features)`
     );
   }
 }
 
 // Export individual config values for convenience
-export const { GITHUB_CLIENT_ID, CEREBRAS_API_KEY, GITHUB_API_URL } = config;
+export const { GITHUB_CLIENT_ID, CEREBRAS_API_KEY, GITHUB_API_URL, NEXT_PUBLIC_CONVEX_URL } = config;

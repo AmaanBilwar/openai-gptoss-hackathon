@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "bun run dev:frontend && bun run dev:convex",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:convex\"",
     "dev:frontend": "next dev --turbopack",
-    "dev:convex": "bunx convex dev",
+    "dev:convex": "npx convex dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -17,8 +17,7 @@
     "auth:status": "tsx src/backend/auth.ts status",
     "auth:logout": "tsx src/backend/auth.ts logout",
     "test-input": "tsx src/backend/test-input.ts",
-    "test-intelligent-split": "tsx src/backend/test-intelligent-split.ts",
-    "test-markdown": "tsx src/backend/test-simple-markdown.ts"
+    "test-intelligent-split": "tsx src/backend/test-intelligent-split.ts"
   },
   "dependencies": {
     "@cerebras/cerebras_cloud_sdk": "^1.46.0",
@@ -42,9 +41,10 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
+    "@types/node": "^20.19.11",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.0",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "tw-animate-css": "^1.3.7",
