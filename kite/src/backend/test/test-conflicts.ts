@@ -1,5 +1,5 @@
 // Test file with various merge conflict scenarios
-import { ConflictResolver } from './mergeConflict';
+import { ConflictResolver } from '../mergeConflict';
 import { resolve } from 'path';
 import { access } from 'fs/promises';
 

@@ -150,7 +150,7 @@ async function suggestUpdateSnippetForContent(content: string, filePathHint?: st
     return { instruction, updateSnippet };
 }
 
-export async function suggestConflictResolutions(content: string, filePath?: string): Promise<void> {
+export async function suggestConflictResolutions(content: string, filePath?: string, print: boolean = true): Promise<void> {
     const conflicts = findAllConflictBlocks(content, 200);
     if (conflicts.length === 0) {
         console.log(`[merge-conflicts] No conflict markers found${filePath ? ` in ${filePath}` : ''}.`);
@@ -174,8 +174,10 @@ export async function suggestConflictResolutions(content: string, filePath?: str
             });
 
             const suggestion = (response.choices as any[])[0]?.message?.content?.trim() || '';
-            console.log(`\n[merge-conflicts] Suggestions for ${filePath || 'in-memory content'} — conflict ${i + 1}/${conflicts.length}:\n`);
-            console.log(suggestion);
+            if (print) {
+                console.log(`\n[merge-conflicts] Suggestions for ${filePath || 'in-memory content'} — conflict ${i + 1}/${conflicts.length}:\n`);
+                console.log(suggestion);
+            }
         } catch (err) {
             console.error(`[merge-conflicts] Failed to get suggestion for conflict ${i + 1}:`, err);
         }
@@ -185,10 +187,12 @@ export async function suggestConflictResolutions(content: string, filePath?: str
     try {
         const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(content, filePath);
         const appliedCode = await applyUpdateSnippetToContent(content, updateSnippet, instruction);
-        console.log('\n[merge-conflicts] Applied file (Morph preview):');
-        console.log(appliedCode);
+        if (print) {
+            console.log('\n[merge-conflicts] Applied file (Morph preview):');
+            console.log(appliedCode);
+        }
     } catch (err) {
-        console.error('[merge-conflicts] Morph apply preview failed:', err);
+        if (print) console.error('[merge-conflicts] Morph apply preview failed:', err);
     }
 }
 
@@ -218,10 +222,12 @@ function buildSuggestionPrompt(conflict: ConflictBlock, filePath: string | undef
  * Returns the resolved content. Optionally provide a filePathHint for better LLM context.
  */
 // Convenience: suggest resolutions and then apply them to a file on disk
-export async function suggestAndApplyConflictResolutionsToFile(inputPath: string): Promise<string> {
+export async function suggestAndApplyConflictResolutionsToFile(inputPath: string, explain: boolean = true): Promise<string> {
   const absIn = path.resolve(inputPath);
   const original = await fs.promises.readFile(absIn, 'utf8');
-  await suggestConflictResolutions(original, absIn);
+  if (explain) {
+    await suggestConflictResolutions(original, absIn, true);
+  }
   const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(original, absIn);
   return await applyUpdateSnippetToFile(absIn, updateSnippet, instruction);
 }
@@ -229,7 +235,7 @@ export async function suggestAndApplyConflictResolutionsToFile(inputPath: string
 /**
  * Recursively resolve merge conflicts under a directory. Returns a summary of results.
  */
-export async function resolveMergeConflictsUnderPath(rootPath: string, previewOnly: boolean = false): Promise<{
+export async function resolveMergeConflictsUnderPath(rootPath: string, previewOnly: boolean = false, explain: boolean = false): Promise<{
   processed: number;
   withConflicts: number;
   resolved: number;
@@ -269,6 +275,9 @@ export async function resolveMergeConflictsUnderPath(rootPath: string, previewOn
         continue;
       }
       withConflicts++;
+      if (explain) {
+        await suggestConflictResolutions(content, file, true);
+      }
       const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(content, file);
       if (previewOnly) {
         await applyUpdateSnippetToContent(content, updateSnippet, instruction);
@@ -287,4 +296,3 @@ export async function resolveMergeConflictsUnderPath(rootPath: string, previewOn
 
   return { processed, withConflicts, resolved, errors, results };
 }
-

@@ -595,6 +595,10 @@ export class GPTOSSToolCaller {
               preview_only: {
                 type: 'boolean',
                 description: 'If true, do not write files; just compute resolutions'
+              },
+              explain: {
+                type: 'boolean',
+                description: 'If true, print concise LLM rationales for each resolved conflict'
               }
             },
             required: []
@@ -627,7 +631,8 @@ Instructions:
 - DO NOT provide additional commentary after tool execution unless specifically requested by the user
 - DO NOT use list_repos unless user specifically asks to see all repositories
 - When user asks to create something (PR, issue, branch), ask for required information instead of listing repositories
-- NEVER assume branch names, repository names, or any other parameters - always ask the user
+- DEFAULTS (CLI): Auto-detect current repository and branch from the local git context and use them by default. Do NOT ask the user for repo/branch if detection succeeds.
+- For operations that work on the local workspace (e.g., resolve_merge_conflicts, check_git_status, commit_and_push, intelligent_commit_split), assume the current repository and branch unless the user explicitly specifies others. Ask only if auto-detection fails.
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
 - When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
 - When user asks to "commit and push", use commit_and_push tool, NOT check_changes_threshold or check_git_status
@@ -920,9 +925,10 @@ Instructions:
         {
           const targetPath = parameters['path'] || process.cwd();
           const previewOnly = parameters['preview_only'] || false;
+          const explain = parameters['explain'] || false;
           try {
             if (previewOnly) {
-              const summary = await resolveMergeConflictsUnderPath(targetPath, true);
+              const summary = await resolveMergeConflictsUnderPath(targetPath, true, explain);
               return {
                 success: true,
                 action: 'preview',
@@ -933,7 +939,7 @@ Instructions:
               try {
                 const stat = await fs.promises.stat(targetPath);
                 if (stat.isFile()) {
-                  const writtenPath = await suggestAndApplyConflictResolutionsToFile(targetPath);
+                  const writtenPath = await suggestAndApplyConflictResolutionsToFile(targetPath, explain);
                   return {
                     success: true,
                     action: 'file_resolved',
@@ -941,7 +947,7 @@ Instructions:
                   } as ToolResult;
                 }
               } catch {}
-              const summary = await resolveMergeConflictsUnderPath(targetPath, false);
+              const summary = await resolveMergeConflictsUnderPath(targetPath, false, explain);
               return {
                 success: true,
                 action: 'applied',
