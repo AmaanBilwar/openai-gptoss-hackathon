@@ -3,7 +3,7 @@ import * as path from 'path';
 
 // Load environment variables from .env file
 // Look for .env in the kite directory (parent of src/backend)
-const envPath = path.resolve(__dirname, '../../.env.local');
+const envPath = path.resolve(__dirname, '../../.env');
 dotenv.config({ path: envPath });
 
 // Also try loading from current directory as fallback

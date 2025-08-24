@@ -4,6 +4,9 @@ import * as readline from 'readline';
 import { GPTOSSToolCaller } from './toolCalling';
 import { ChatMessage } from './types';
 import { validateConfig } from './config';
+import { TokenStore } from './tokenStore';
+import { openBrowser } from './utils';
+import { parseMarkdownToText } from './markdownParser';
 
 /**
  * Enhanced interactive chat mode with better Windows compatibility
@@ -15,6 +18,32 @@ export async function startInteractiveChat(): Promise<void> {
   } catch (error) {
     console.error('❌ Environment configuration error:', error);
     console.log('Please set up your .env file with the required API keys.');
+    return;
+  }
+
+  // Check authentication status
+  const tokenStore = new TokenStore();
+  const isAuthenticated = await tokenStore.isAuthenticated();
+  
+  if (!isAuthenticated) {
+    console.log('🔐 Authentication required');
+    console.log('You need to sign in to use Kite CLI.');
+    console.log('');
+    
+    const authUrl = 'http://localhost:3000?from_cli=true';
+    console.log(`Opening browser to: ${authUrl}`);
+    
+    try {
+      await openBrowser(authUrl);
+      console.log('✅ Browser opened successfully');
+    } catch (error) {
+      console.log(`Please manually visit: ${authUrl}`);
+    }
+    
+    console.log('');
+    console.log('After signing in, run "bun run chat" again to continue.');
+    console.log('');
+    console.log('💡 Tip: Make sure the web server is running with "bun run dev"');
     return;
   }
 
@@ -71,9 +100,13 @@ export async function startInteractiveChat(): Promise<void> {
 
         // Add assistant response to conversation
         const assistantContent = responseChunks.join('');
+        
+        // Parse markdown content for better display and storage
+        const parsedContent = parseMarkdownToText(assistantContent);
+        
         messages.push({
           role: 'assistant',
-          content: assistantContent
+          content: parsedContent
         });
 
       } catch (error) {

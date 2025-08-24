@@ -14,7 +14,13 @@ import {
   GetIssueArgs,
   UpdateIssueArgs,
   LockIssueArgs,
-  UnlockIssueArgs
+  UnlockIssueArgs,
+  GetPullRequestArgs,
+  UpdatePullRequestArgs,
+  ListPullRequestCommitsArgs,
+  ListPullRequestFilesArgs,
+  CheckPullRequestMergedArgs,
+  UpdatePullRequestBranchArgs
 } from './types';
 
 /**
@@ -267,6 +273,52 @@ export class GitHubClient {
     }
   }
 
+
+  /**
+   * List pull requests for a repository
+   */
+  async listPullRequests(repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      // Normalize repo (allow just repo name by inferring authenticated owner)
+      let owner: string;
+      let repoName: string;
+      
+      if (repo.includes('/')) {
+        [owner, repoName] = repo.split('/', 2);
+      } else {
+        const user = await this.getAuthenticatedUser();
+        owner = user.login;
+        repoName = repo;
+      }
+
+      const { data: pullRequests } = await octokit.pulls.list({
+        owner,
+        repo: repoName,
+        state: state,
+        per_page: 100,
+        sort: 'updated',
+        direction: 'desc'
+      });
+
+      return {
+        success: true,
+        repo: `${owner}/${repoName}`,
+        pull_request_count: pullRequests.length,
+        pull_requests: pullRequests,
+        result: pullRequests
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: repo
+      };
+    }
+  }
+
+  
   /**
    * List issues for a repository
    */
@@ -473,6 +525,304 @@ export class GitHubClient {
         error: error instanceof Error ? error.message : 'Unknown error',
         repo: `${args.owner}/${args.repo}`,
         issue_number: args.issueNumber
+      };
+    }
+  }
+
+  /**
+   * Get a specific pull request
+   */
+  async getPullRequest(args: GetPullRequestArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: pullRequest } = await octokit.pulls.get({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.pullNumber
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber,
+        title: pullRequest.title,
+        body: pullRequest.body,
+        state: pullRequest.state,
+        head: pullRequest.head.ref,
+        base: pullRequest.base.ref,
+        merged: pullRequest.merged,
+        mergeable: pullRequest.mergeable,
+        mergeable_state: pullRequest.mergeable_state,
+        url: pullRequest.html_url,
+        result: pullRequest
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber
+      };
+    }
+  }
+
+  /**
+   * Update a pull request
+   */
+  async updatePullRequest(args: UpdatePullRequestArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const updateData: any = {};
+      if (args.title !== undefined) updateData.title = args.title;
+      if (args.body !== undefined) updateData.body = args.body;
+      if (args.state !== undefined) updateData.state = args.state;
+      if (args.base !== undefined) updateData.base = args.base;
+
+      const { data: pullRequest } = await octokit.pulls.update({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.pullNumber,
+        ...updateData
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber,
+        title: args.title,
+        body: args.body,
+        state: args.state,
+        base: args.base,
+        url: pullRequest.html_url,
+        result: pullRequest
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber
+      };
+    }
+  }
+
+  /**
+   * List commits on a pull request
+   */
+  async listPullRequestCommits(args: ListPullRequestCommitsArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: commits } = await octokit.pulls.listCommits({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.pullNumber,
+        per_page: args.perPage || 100,
+        page: args.page || 1
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber,
+        commit_count: commits.length,
+        commits: commits,
+        result: commits
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber
+      };
+    }
+  }
+
+  /**
+   * List commits in a repository
+   */
+  async listRepositoryCommits(args: { owner: string; repo: string; branch?: string; perPage?: number; page?: number }): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: commits } = await octokit.repos.listCommits({
+        owner: args.owner,
+        repo: args.repo,
+        sha: args.branch || 'main',
+        per_page: args.perPage || 10,
+        page: args.page || 1
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch || 'main',
+        commit_count: commits.length,
+        commits: commits,
+        result: commits
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch || 'main'
+      };
+    }
+  }
+
+  /**
+   * List files changed in a pull request
+   */
+  async listPullRequestFiles(args: ListPullRequestFilesArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: files } = await octokit.pulls.listFiles({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.pullNumber,
+        per_page: args.perPage || 100,
+        page: args.page || 1
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber,
+        file_count: files.length,
+        files: files,
+        result: files
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber
+      };
+    }
+  }
+
+  /**
+   * Check if a pull request has been merged
+   */
+  async checkPullRequestMerged(args: CheckPullRequestMergedArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { status } = await octokit.pulls.checkIfMerged({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.pullNumber
+      });
+
+      const isMerged = status === 204;
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber,
+        merged: isMerged,
+        message: isMerged ? `Pull request #${args.pullNumber} has been merged` : `Pull request #${args.pullNumber} has not been merged`
+      };
+    } catch (error) {
+      // If the error is 404, it means the PR hasn't been merged
+      if (error instanceof Error && error.message.includes('404')) {
+        return {
+          success: true,
+          repo: `${args.owner}/${args.repo}`,
+          pull_number: args.pullNumber,
+          merged: false,
+          message: `Pull request #${args.pullNumber} has not been merged`
+        };
+      }
+      
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber
+      };
+    }
+  }
+
+  /**
+   * Update a pull request branch
+   */
+  async updatePullRequestBranch(args: UpdatePullRequestBranchArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const updateData: any = {};
+      if (args.expectedHeadSha !== undefined) updateData.expected_head_sha = args.expectedHeadSha;
+
+      const { data: result } = await octokit.pulls.updateBranch({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.pullNumber,
+        ...updateData
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber,
+        message: result.message || `Pull request #${args.pullNumber} branch updated successfully`,
+        url: result.url,
+        result: result
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pull_number: args.pullNumber
+      };
+    }
+  }
+
+  /**
+   * Check if a branch exists
+   */
+  async checkBranchExists(args: { owner: string; repo: string; branch: string }): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: branch } = await octokit.repos.getBranch({
+        owner: args.owner,
+        repo: args.repo,
+        branch: args.branch
+      });
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch,
+        exists: true,
+        sha: branch.commit.sha,
+        result: branch
+      };
+    } catch (error) {
+      // If we get a 404, the branch doesn't exist
+      if (error instanceof Error && error.message.includes('404')) {
+        return {
+          success: true,
+          repo: `${args.owner}/${args.repo}`,
+          branch: args.branch,
+          exists: false,
+          message: `Branch '${args.branch}' does not exist`
+        };
+      }
+      
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        branch: args.branch
       };
     }
   }
