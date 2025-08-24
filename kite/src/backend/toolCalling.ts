@@ -1209,6 +1209,43 @@ Instructions:
         } else {
           return `❌ Branch '${branchName}' does not exist`;
         }
+      case 'resolve_merge_conflicts':
+        if (result.action === 'file_resolved') {
+          return `✅ Merge conflicts resolved in file: ${result.path}`;
+        }
+        if (result.action === 'applied' || result.action === 'preview') {
+          const summary = result.summary || {};
+          const processed = summary.processed ?? 0;
+          const withConflicts = summary.withConflicts ?? 0;
+          const resolved = summary.resolved ?? 0;
+          const errors = summary.errors ?? 0;
+          const results = Array.isArray(summary.results) ? summary.results : [];
+
+          const filesWithConflicts = results.filter((r: any) => r.hadConflict);
+          const writtenFiles = results.filter((r: any) => r.written).map((r: any) => r.file);
+          const resolvedFiles = results.filter((r: any) => r.resolved).map((r: any) => r.file);
+          const unresolvedFiles = results.filter((r: any) => r.hadConflict && !r.resolved).map((r: any) => r.file);
+          const errorFiles = results.filter((r: any) => r.error).map((r: any) => `${r.file} (${r.error})`);
+
+          let message = `✅ Merge conflict ${result.action === 'preview' ? 'preview' : 'resolution'}: ${processed} processed, ${withConflicts} with conflicts, ${resolved} resolved${errors ? `, ${errors} errors` : ''}`;
+          if (filesWithConflicts.length) {
+            message += `\n📁 Files with conflicts: ${filesWithConflicts.map((f: any) => f.file).join(', ')}`;
+          }
+          if (writtenFiles.length) {
+            message += `\n📝 Files written: ${writtenFiles.join(', ')}`;
+          }
+          if (resolvedFiles.length) {
+            message += `\n✅ Resolved files: ${resolvedFiles.join(', ')}`;
+          }
+          if (unresolvedFiles.length) {
+            message += `\n⏳ Unresolved: ${unresolvedFiles.join(', ')}`;
+          }
+          if (errorFiles.length) {
+            message += `\n❌ Errors: ${errorFiles.join(', ')}`;
+          }
+          return message;
+        }
+        return '✅ Merge conflicts resolution completed';
 
       default:
         return `✅ ${toolName} completed successfully`;
@@ -1888,3 +1925,4 @@ Instructions:
     return response;
   }
 }
+

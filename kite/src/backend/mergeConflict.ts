@@ -131,10 +131,40 @@ function trimTrailingNewline(text: string): string {
 
 async function suggestUpdateSnippetForContent(content: string, filePathHint?: string): Promise<{ instruction: string; updateSnippet: string }> {
     const client = new Cerebras({ apiKey: CEREBRAS_API_KEY });
-    const instruction = `Resolve all Git merge conflicts${filePathHint ? ` in ${filePathHint}` : ''} by removing conflict markers and producing the best unified code. Preserve surrounding structure and formatting.`;
-    const system = 'You generate minimal <update> snippets for Morph Apply API. Return ONLY the update code between <update> tags. Use // ... existing code ... to omit unchanged sections. Do not repeat <code> or <instruction>.';
-    const user = `<instruction>${instruction}</instruction>\n<code>${content}</code>\n<update>// Provide only the changed code with // ... existing code ... markers</update>`;
 
+    const instruction = `
+    Your task is to resolve Git merge conflicts in code.
+    
+    Use a TWO-STAGE approach:
+    1. **Classification stage**: For each conflict, determine whether it should be resolved by:
+       - LEFT (keep only the left version),
+       - RIGHT (keep only the right version),
+       - MANUAL (merge parts of both sides into a unified version).
+       Provide a one-line comment above each resolution stating which strategy you applied.
+    2. **Resolution stage**: Rewrite the conflicted code with the conflict markers removed, applying the chosen strategy. 
+       Preserve all correct surrounding code, indentation, and formatting.
+    
+    Important:
+    - Do not leave conflict markers (<<<<<<, ======, >>>>>>).
+    - Keep the result syntactically correct and stylistically consistent with surrounding code.
+    - Avoid unnecessary rewrites of unchanged code.
+    ${filePathHint ? `- This conflict is inside: ${filePathHint}` : ''}
+    `;
+    
+    const system = `
+    You generate minimal <update> snippets for the Morph Apply API. 
+    Return ONLY the update code between <update> tags. 
+    Use // ... existing code ... to omit unchanged sections. 
+    Do not repeat <code> or <instruction>. 
+    Always include the classification comment (// RESOLUTION: LEFT | RIGHT | MANUAL) above each resolved conflict.
+    `;
+    
+    const user = `
+    <instruction>${instruction}</instruction>
+    <code>${content}</code>
+    <update>// Provide only the changed code with // ... existing code ... markers</update>
+    `;
+    
     const response = await client.chat.completions.create({
         model: 'gpt-oss-120b',
         messages: [
@@ -153,7 +183,8 @@ async function suggestUpdateSnippetForContent(content: string, filePathHint?: st
 export async function suggestConflictResolutions(content: string, filePath?: string, print: boolean = true): Promise<void> {
     const conflicts = findAllConflictBlocks(content, 200);
     if (conflicts.length === 0) {
-        console.log(`[merge-conflicts] No conflict markers found${filePath ? ` in ${filePath}` : ''}.`);
+        // Remove this console.log to prevent false reporting of files without conflicts
+        // console.log(`[merge-conflicts] No conflict markers found${filePath ? ` in ${filePath}` : ''}.`);
         return;
     }
 
@@ -183,16 +214,18 @@ export async function suggestConflictResolutions(content: string, filePath?: str
         }
     }
 
-    // Try applying changes using Morph Apply API on the full file (preview only; does not write)
-    try {
-        const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(content, filePath);
-        const appliedCode = await applyUpdateSnippetToContent(content, updateSnippet, instruction);
-        if (print) {
-            console.log('\n[merge-conflicts] Applied file (Morph preview):');
-            console.log(appliedCode);
+    // Only try Morph Apply if there are actual conflicts
+    if (conflicts.length > 0) {
+        try {
+            const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(content, filePath);
+            const appliedCode = await applyUpdateSnippetToContent(content, updateSnippet, instruction);
+            if (print) {
+                console.log('\n[merge-conflicts] Applied file (Morph preview):');
+                console.log(appliedCode);
+            }
+        } catch (err) {
+            if (print) console.error('[merge-conflicts] Morph apply preview failed:', err);
         }
-    } catch (err) {
-        if (print) console.error('[merge-conflicts] Morph apply preview failed:', err);
     }
 }
 
@@ -225,11 +258,21 @@ function buildSuggestionPrompt(conflict: ConflictBlock, filePath: string | undef
 export async function suggestAndApplyConflictResolutionsToFile(inputPath: string, explain: boolean = true): Promise<string> {
   const absIn = path.resolve(inputPath);
   const original = await fs.promises.readFile(absIn, 'utf8');
-  if (explain) {
+  
+  // Only show suggestions if the file actually has conflicts
+  const hasConflicts = hasConflictMarkers(original);
+  if (hasConflicts) {
     await suggestConflictResolutions(original, absIn, true);
   }
-  const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(original, absIn);
-  return await applyUpdateSnippetToFile(absIn, updateSnippet, instruction);
+  
+  // Only process if there are actual conflicts
+  if (hasConflicts) {
+    const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(original, absIn);
+    return await applyUpdateSnippetToFile(absIn, updateSnippet, instruction);
+  } else {
+    // Return the original file path if no conflicts
+    return absIn;
+  }
 }
 
 /**
@@ -245,6 +288,8 @@ export async function resolveMergeConflictsUnderPath(rootPath: string, previewOn
   const absRoot = path.resolve(rootPath);
   const ignoreDirs = new Set(['node_modules', '.git', '.next', 'dist', 'build', '.turbo', '.cache']);
 
+  const ignoreFiles = new Set(['mergeConflict.ts']);
+
   async function* walk(dir: string): AsyncGenerator<string> {
     const entries = await fs.promises.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
@@ -254,7 +299,9 @@ export async function resolveMergeConflictsUnderPath(rootPath: string, previewOn
           yield* walk(full);
         }
       } else if (entry.isFile()) {
-        yield full;
+        if (!ignoreFiles.has(entry.name)) {
+          yield full;
+        }
       }
     }
   }
@@ -275,9 +322,11 @@ export async function resolveMergeConflictsUnderPath(rootPath: string, previewOn
         continue;
       }
       withConflicts++;
-      if (explain) {
-        await suggestConflictResolutions(content, file, true);
-      }
+      
+      // Only show suggestions if explain is true AND the file has conflicts
+      await suggestConflictResolutions(content, file);
+      
+      // Only process files that actually have conflicts
       const { instruction, updateSnippet } = await suggestUpdateSnippetForContent(content, file);
       if (previewOnly) {
         await applyUpdateSnippetToContent(content, updateSnippet, instruction);
