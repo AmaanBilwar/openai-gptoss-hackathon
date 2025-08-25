@@ -43,13 +43,22 @@ ${semanticSummary}
     context += `
 Group: ${featureName}
 
-Generate a commit message in this exact format:
-TITLE: feat: your title here (max 50 chars)
-MESSAGE: Your detailed message here explaining what was changed and why.
+Generate a commit message in the following format:
 
-Use conventional commit format (feat:, fix:, docs:, style:, refactor:, test:, chore:, perf:, ci:, build:)
-Focus on business value and user impact, not just technical details.
-Use the semantic analysis to understand the broader context and purpose of these changes.
+TITLE: <type>: <short summary in imperative mood, max 50 chars>
+MESSAGE: <explanation of WHAT changed, WHY it matters, and the USER IMPACT. Avoid restating code-level details unless they affect users.>
+
+Conventional commit types: feat, fix, docs, style, refactor, test, chore, perf, ci, build.
+Guidelines:
+- Use a meaningful, descriptive title (not generic like "update" or "misc").
+- Highlight the business or user value in the message.
+- Keep the title concise and scoped, message clear and actionable.
+- Write in present tense, imperative mood.
+- Avoid unnecessary technical jargon unless essential.
+
+Example:
+TITLE: feat: add GitHub OAuth login  
+MESSAGE: Introduced GitHub OAuth login so users can sign in without creating a new account, reducing onboarding friction.
 `;
     
     try {
