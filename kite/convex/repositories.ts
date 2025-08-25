@@ -19,11 +19,14 @@ export const getUserRepositories = query({
 // Add a repository
 export const addRepository = mutation({
   args: {
+    repoId: v.number(),
+    owner: v.string(),
     name: v.string(),
     fullName: v.string(),
-    url: v.string(),
+    htmlUrl: v.string(),
     description: v.optional(v.string()),
-    isPrivate: v.boolean(),
+    private: v.boolean(),
+    defaultBranch: v.string(),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -41,12 +44,16 @@ export const addRepository = mutation({
 
     return await ctx.db.insert("repositories", {
       userId: identity.subject,
+      repoId: args.repoId,
+      owner: args.owner,
       name: args.name,
       fullName: args.fullName,
-      url: args.url,
+      htmlUrl: args.htmlUrl,
       description: args.description,
-      isPrivate: args.isPrivate,
+      private: args.private,
+      defaultBranch: args.defaultBranch,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     });
   },
 });
