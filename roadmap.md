@@ -12,19 +12,24 @@
 ## need immediate attention
 
 
-- [ ] merge conflicts - Ani
-- [ ] rag commit feature - Vishesh
+- [x] merge conflicts - Ani
+    - [x] basic functionality 
+    - [ ] do we wanna add webhook?
+
+- [x] add auth to cli (ts backend) - Amaan
+
+- [x] rag commit feature - Vishesh
+    - [ ] test vector db  - convex 
+    - [ ] check other dbs 
+    - [ ] make test chat app for querying      
     - [ ] pr reviewer feature can utilize the rag features to integrate it - Vishesh 
-- [ ] add auth to cli (ts backend) - Amaan
-- [ ] Infinite Chat - Amaan
 
----
-## second in command
+- [ ] agent activity db updates? - Amaan 
+- [ ] TUI - Amaan
+- [ ] gprc in go and ts - Amaan
 
-- [ ] TUI - Vishesh
-- [ ] understand + counter rate limits 
-- [ ] llm response caching
-- [ ] llm rate limits
+
+
 - [ ] web dashboard
     - [ ] sidebar
     - [ ] settings page
@@ -35,12 +40,32 @@
         - [ ] activity page  
     - [ ] login butons
 
+
+- [ ] user activity data from github (webhooks vs endpoints?) - VIshesh 
+
+
+
+
+
+---
+## second in command
+
+
+
+
+- [ ] Better - intelligent commit spliiter
+- [ ] Infinite Chat - Amaan
+
+- [ ] understand + counter rate limits 
+- [ ] llm response caching
+- [ ] llm rate limits
+
+- [ ] fine-tune wth mergeBERT - ? 
+
 ---
 ## up for debate
 
-- [ ] figure out communication (REST/gRPC?)
-- [ ] should we get rid of the python backend?
-- [ ] bring  your own api key ? 
+- [ ] Openrouter — bring  your own api key ? 
 
 ---
 ## miscellaneous
