@@ -29,7 +29,6 @@
 - [ ] gprc in go and ts - Amaan
 
 
-
 - [ ] web dashboard
     - [ ] sidebar
     - [ ] settings page
@@ -43,14 +42,8 @@
 
 - [ ] user activity data from github (webhooks vs endpoints?) - VIshesh 
 
-
-
-
-
 ---
 ## second in command
-
-
 
 
 - [ ] Better - intelligent commit spliiter
