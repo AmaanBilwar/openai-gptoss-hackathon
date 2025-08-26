@@ -121,6 +121,12 @@ export default function CLIAuthSuccessPage() {
         <h1 className="text-3xl font-bold text-gray-800 mb-4">
           Authentication Successful!
         </h1>
+        <p className="text-sm pb-6 text-gray-500">
+          Welcome,{" "}
+          <span className="font-semibold bg-gray-700 text-white p-2 rounded-md">
+            {user.firstName || user.primaryEmailAddress?.emailAddress}!
+          </span>
+        </p>
         <p className="text-gray-600 mb-6">
           You've successfully signed in to Kite CLI. You can now return to your
           terminal and continue using the CLI.
@@ -128,9 +134,6 @@ export default function CLIAuthSuccessPage() {
         <div className="bg-gray-100 p-4 rounded-lg mb-6">
           <p className="text-sm text-gray-700 font-mono">bun run chat</p>
         </div>
-        <p className="text-sm text-gray-500">
-          Welcome, {user.firstName || user.primaryEmailAddress?.emailAddress}!
-        </p>
       </div>
     </main>
   );

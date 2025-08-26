@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { TokenData } from './types';
+import { Keyring } from 'keyring';
 
 /**
  * TokenStore handles persistence of GitHub OAuth tokens
@@ -11,18 +12,36 @@ export class TokenStore {
   private readonly serviceName: string;
   private readonly filename: string;
   private keyring: any = null;
+  private keyringInitialized: boolean = false;
 
   constructor(serviceName: string = 'gh_oauth_cli', filename: string = '.gh_oauth_token') {
     this.serviceName = serviceName;
     this.filename = path.join(os.homedir(), filename);
-    
-    // Try to import keyring
-    try {
-      // Note: keyring is not included in package.json as it's optional
-      // Users can install it separately: npm install keyring
-      this.keyring = require('keyring');
-    } catch {
+  }
+
+  /**
+   * Initialize keyring if available
+   */
+  private async initializeKeyring(): Promise<void> {
+    if (this.keyringInitialized) {
+      return;
+    }
+
+    // Only try to load keyring in Node.js environment
+    if (typeof window === 'undefined' && typeof process !== 'undefined') {
+      try {
+        // Use dynamic import to avoid bundling issues
+        const keyringModule = await import('keyring');
+        this.keyring = keyringModule.default || keyringModule;
+        this.keyringInitialized = true;
+      } catch (error) {
+        console.warn('Keyring not available, falling back to file storage:', error);
+        this.keyring = null;
+        this.keyringInitialized = true;
+      }
+    } else {
       this.keyring = null;
+      this.keyringInitialized = true;
     }
   }
 
@@ -30,6 +49,8 @@ export class TokenStore {
    * Save token to secure storage
    */
   async save(token: string): Promise<void> {
+    await this.initializeKeyring();
+    
     const tokenData: TokenData = {
       access_token: token,
       created_at: new Date().toISOString()
@@ -58,6 +79,8 @@ export class TokenStore {
    * Load token from secure storage
    */
   async load(): Promise<string | null> {
+    await this.initializeKeyring();
+    
     if (this.keyring) {
       try {
         const tokenJson = await this.keyring.getPassword(this.serviceName, 'token');
@@ -89,6 +112,8 @@ export class TokenStore {
    * Delete token from storage
    */
   async delete(): Promise<void> {
+    await this.initializeKeyring();
+    
     if (this.keyring) {
       try {
         await this.keyring.deletePassword(this.serviceName, 'token');
@@ -119,6 +144,8 @@ export class TokenStore {
    * Get token data with metadata
    */
   async getTokenData(): Promise<TokenData | null> {
+    await this.initializeKeyring();
+    
     if (this.keyring) {
       try {
         const tokenJson = await this.keyring.getPassword(this.serviceName, 'token');
