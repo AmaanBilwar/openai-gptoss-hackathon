@@ -12,6 +12,31 @@ export class CerebrasLLM {
   }
 
   /**
+   * Generate text using Cerebras LLM
+   */
+  async generateText(prompt: string): Promise<string> {
+    try {
+      const response = await this.client.chat.completions.create({
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        model: 'gpt-oss-120b',
+        max_tokens: 500,
+        temperature: 0.7
+      });
+      
+      return (response.choices as any[])[0].message.content?.trim() || '';
+      
+    } catch (error) {
+      console.error('Error generating text:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Generate commit title and message using LLM with semantic context
    */
   async generateCommitMessage(
@@ -28,7 +53,8 @@ Files changed:
     for (const change of fileChanges) {
       context += `- ${change.file_path} (${change.change_type})\n`;
       if (change.diff_content) {
-        context += `  Changes: ${change.diff_content.substring(0, 200)}...\n`;
+        // Include full diff content for better context
+        context += `  Changes:\n${change.diff_content}\n`;
       }
     }
     
@@ -42,6 +68,8 @@ ${semanticSummary}
     
     context += `
 Group: ${featureName}
+
+IMPORTANT: Analyze the actual diff content above to understand what changed. Focus on the specific modifications, not just the file path.
 
 Generate a commit message in the following format:
 
@@ -66,7 +94,7 @@ MESSAGE: Introduced GitHub OAuth login so users can sign in without creating a n
         messages: [
           {
             role: 'system',
-            content: 'You are a git commit message generator. Always respond with exactly two lines: TITLE: followed by MESSAGE:. Never include markdown, explanations, or extra formatting.'
+            content: 'You are a git commit message generator. Analyze the diff content carefully to understand what actually changed. Focus on the specific modifications, not just the file path. Always respond with exactly two lines: TITLE: followed by MESSAGE:. Never include markdown, explanations, or extra formatting.'
           },
           {
             role: 'user',
