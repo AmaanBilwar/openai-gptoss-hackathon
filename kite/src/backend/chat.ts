@@ -9,7 +9,32 @@ import { openBrowser } from './utils';
 import { parseMarkdownToText } from './markdownParser';
 
 /**
- * Enhanced interactive chat mode with better Windows compatibility
+ * Poll for authentication completion
+ */
+async function waitForAuthentication(tokenStore: TokenStore, maxAttempts: number = 60): Promise<boolean> {
+  console.log('⏳ Waiting for authentication to complete...');
+  console.log('   (This may take a moment after you complete the sign-in process)');
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between checks
+    
+    const isAuthenticated = await tokenStore.isAuthenticated();
+    if (isAuthenticated) {
+      console.log('✅ Authentication successful!');
+      return true;
+    }
+    
+    // Show progress indicator
+    const dots = '.'.repeat((attempt % 3) + 1);
+    process.stdout.write(`\r⏳ Waiting for authentication${dots}   `);
+  }
+  
+  console.log('\n❌ Authentication timeout. Please try again.');
+  return false;
+}
+
+/**
+ * Enhanced interactive chat mode with better Windows compatibility and automatic auth polling
  */
 export async function startInteractiveChat(): Promise<void> {
   // Validate environment configuration first
@@ -23,7 +48,7 @@ export async function startInteractiveChat(): Promise<void> {
 
   // Check authentication status
   const tokenStore = new TokenStore();
-  const isAuthenticated = await tokenStore.isAuthenticated();
+  let isAuthenticated = await tokenStore.isAuthenticated();
   
   if (!isAuthenticated) {
     console.log('🔐 Authentication required');
@@ -41,10 +66,17 @@ export async function startInteractiveChat(): Promise<void> {
     }
     
     console.log('');
-    console.log('After signing in, run "bun run chat" again to continue.');
-    console.log('');
     console.log('💡 Tip: Make sure the web server is running with "bun run dev"');
-    return;
+    console.log('');
+    
+    // Wait for authentication to complete
+    isAuthenticated = await waitForAuthentication(tokenStore);
+    
+    if (!isAuthenticated) {
+      return;
+    }
+    
+    console.log(''); // Add spacing after auth success
   }
 
   const caller = new GPTOSSToolCaller();
