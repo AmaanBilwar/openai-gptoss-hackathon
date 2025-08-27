@@ -1,78 +1,135 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Item represents a list item
-type item struct {
-	title       string
-	description string
+// API client for communicating with TypeScript backend
+type APIClient struct {
+	baseURL string
+	client  *http.Client
 }
 
-func (i item) Title() string       { return i.title }
-func (i item) Description() string { return i.description }
-func (i item) FilterValue() string { return i.title }
+func NewAPIClient(baseURL string) *APIClient {
+	return &APIClient{
+		baseURL: baseURL,
+		client:  &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func (c *APIClient) CheckHealth() error {
+	resp, err := c.client.Get(c.baseURL + "/health")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func (c *APIClient) CheckAuth() (bool, error) {
+	resp, err := c.client.Get(c.baseURL + "/auth/status")
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Authenticated bool `json:"authenticated"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, err
+	}
+	return result.Authenticated, nil
+}
+
+func (c *APIClient) SendMessage(messages []ChatMessage) (string, error) {
+	payload := map[string]interface{}{
+		"messages": messages,
+		"stream":   false,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.client.Post(c.baseURL+"/chat", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	return result.Response, nil
+}
+
+// Chat message structure
+type ChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
 
 // Model represents the main application state
 type model struct {
-	list     list.Model
-	spinner  spinner.Model
-	input    textinput.Model
-	viewport viewport.Model
-	ready    bool
-	width    int
-	height   int
+	apiClient   *APIClient
+	messages    []ChatMessage
+	viewport    viewport.Model
+	textarea    textarea.Model
+	spinner     spinner.Model
+	ready       bool
+	width       int
+	height      int
+	loading     bool
+	error       string
+	authChecked bool
 }
 
 // Initial model
 func initialModel() model {
+	// Initialize API client
+	apiClient := NewAPIClient("http://localhost:3001")
+
 	// Initialize spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	// Initialize text input
-	ti := textinput.New()
-	ti.Placeholder = "Enter some text..."
-	ti.Focus()
-	ti.CharLimit = 50
-	ti.Width = 40
-
-	// Initialize list
-	items := []list.Item{
-		item{title: "Raspberry Pi's", description: "I have 'em all over my house"},
-		item{title: "Charm", description: "Delightful Go packages for TUI"},
-		item{title: "Go", description: "The best programming language"},
-		item{title: "Bubble Tea", description: "A powerful little TUI framework"},
-		item{title: "Lip Gloss", description: "Style definitions for nice terminal layouts"},
-		item{title: "Bubbles", description: "TUI components for Bubble Tea"},
-		item{title: "Termenv", description: "Advanced ANSI styling for terminal applications"},
-	}
-
-	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
-	l.Title = "What do you want to do?"
-	l.SetShowHelp(true)
+	// Initialize textarea
+	ta := textarea.New()
+	ta.Placeholder = "Ask me anything about your GitHub repositories..."
+	ta.Focus()
+	ta.CharLimit = 1000
+	ta.SetHeight(3)
 
 	// Initialize viewport
-	vp := viewport.New(60, 10)
+	vp := viewport.New(80, 20)
 	vp.Style = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62"))
 
 	return model{
-		list:     l,
-		spinner:  s,
-		input:    ti,
-		viewport: vp,
+		apiClient: apiClient,
+		messages:  []ChatMessage{},
+		viewport:  vp,
+		textarea:  ta,
+		spinner:   s,
 	}
 }
 
@@ -80,8 +137,75 @@ func initialModel() model {
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		spinner.Tick,
-		textinput.Blink,
+		textarea.Blink,
+		m.checkAPIHealth(),
 	)
+}
+
+// Commands
+func (m model) checkAPIHealth() tea.Cmd {
+	return func() tea.Msg {
+		if err := m.apiClient.CheckHealth(); err != nil {
+			return errorMsg{err.Error()}
+		}
+		return healthCheckMsg{true}
+	}
+}
+
+func (m model) checkAuth() tea.Cmd {
+	return func() tea.Msg {
+		authenticated, err := m.apiClient.CheckAuth()
+		if err != nil {
+			return errorMsg{err.Error()}
+		}
+		return authCheckMsg{authenticated}
+	}
+}
+
+func (m model) sendMessage() tea.Cmd {
+	return func() tea.Msg {
+		content := strings.TrimSpace(m.textarea.Value())
+		if content == "" {
+			return nil
+		}
+
+		// Add user message
+		userMsg := ChatMessage{Role: "user", Content: content}
+		messages := append(m.messages, userMsg)
+
+		// Send to API
+		response, err := m.apiClient.SendMessage(messages)
+		if err != nil {
+			return errorMsg{err.Error()}
+		}
+
+		// Add assistant message
+		assistantMsg := ChatMessage{Role: "assistant", Content: response}
+		messages = append(messages, assistantMsg)
+
+		return messageResponseMsg{
+			userMessage:      userMsg,
+			assistantMessage: assistantMsg,
+		}
+	}
+}
+
+// Messages
+type healthCheckMsg struct {
+	healthy bool
+}
+
+type authCheckMsg struct {
+	authenticated bool
+}
+
+type messageResponseMsg struct {
+	userMessage      ChatMessage
+	assistantMessage ChatMessage
+}
+
+type errorMsg struct {
+	error string
 }
 
 // Update function
@@ -93,39 +217,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "tab":
-			// Cycle through components
-			if m.input.Focused() {
-				m.input.Blur()
-				m.list.SetShowHelp(true)
-			} else {
-				m.input.Focus()
-				m.list.SetShowHelp(false)
+		case "enter":
+			if !m.loading && m.authChecked {
+				m.loading = true
+				return m, tea.Batch(
+					spinner.Tick,
+					m.sendMessage(),
+				)
 			}
 		}
+
+	case healthCheckMsg:
+		if msg.healthy {
+			return m, m.checkAuth()
+		}
+
+	case authCheckMsg:
+		m.authChecked = true
+		if !msg.authenticated {
+			m.error = "❌ Not authenticated. Please run the web app first and sign in."
+		}
+
+	case messageResponseMsg:
+		m.loading = false
+		m.messages = append(m.messages, msg.userMessage, msg.assistantMessage)
+		m.textarea.SetValue("")
+		m.updateViewport()
+
+	case errorMsg:
+		m.loading = false
+		m.error = "❌ " + msg.error
+
 	case tea.WindowSizeMsg:
 		if !m.ready {
 			m.width = msg.Width
 			m.height = msg.Height
 			m.ready = true
-
-			// Update viewport content
-			content := lipgloss.NewStyle().
-				Width(m.width - 4).
-				Height(m.height - 4).
-				Render(fmt.Sprintf("Welcome to the Kite Dummy TUI App!\n\n" +
-					"This is a viewport component that can display scrollable content.\n" +
-					"You can use it to show logs, documentation, or any long text.\n\n" +
-					"Features:\n" +
-					"• Beautiful styling with Lip Gloss\n" +
-					"• Interactive list with keyboard navigation\n" +
-					"• Text input with focus management\n" +
-					"• Animated spinner\n" +
-					"• Responsive viewport\n\n" +
-					"Press 'tab' to cycle between components\n" +
-					"Press 'q' to quit"))
-
-			m.viewport.SetContent(content)
+			m.updateViewport()
 		}
 	}
 
@@ -134,16 +262,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.spinner, cmd = m.spinner.Update(msg)
 	cmds = append(cmds, cmd)
 
-	m.input, cmd = m.input.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.list, cmd = m.list.Update(msg)
+	m.textarea, cmd = m.textarea.Update(msg)
 	cmds = append(cmds, cmd)
 
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *model) updateViewport() {
+	var content strings.Builder
+
+	// Add welcome message if no messages
+	if len(m.messages) == 0 {
+		content.WriteString("🤖 Welcome to Kite CLI!\n\n")
+		content.WriteString("Ask me anything about your GitHub repositories.\n")
+		content.WriteString("I can help you with:\n")
+		content.WriteString("• Repository management\n")
+		content.WriteString("• Code analysis\n")
+		content.WriteString("• Pull request reviews\n")
+		content.WriteString("• And much more!\n\n")
+		content.WriteString("Type your question below and press Enter.\n")
+	} else {
+		// Display conversation
+		for _, msg := range m.messages {
+			if msg.Role == "user" {
+				content.WriteString("👤 You: " + msg.Content + "\n\n")
+			} else {
+				content.WriteString("🤖 Kite: " + msg.Content + "\n\n")
+			}
+		}
+	}
+
+	m.viewport.SetContent(content.String())
+	m.viewport.GotoBottom()
 }
 
 // View function
@@ -159,38 +312,48 @@ func (m model) View() string {
 		Padding(0, 1).
 		Bold(true)
 
-	sectionStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2).
-		Margin(0, 1)
+	errorStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#FF6B6B")).
+		Padding(0, 1)
+
+	loadingStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#4ECDC4")).
+		Padding(0, 1)
 
 	// Create the layout
 	var sections []string
 
 	// Title
-	sections = append(sections, titleStyle.Render("✨ Amazing TUI Application ✨"))
+	sections = append(sections, titleStyle.Render("🚀 Kite CLI - AI GitHub Assistant"))
 
-	// Top row: Spinner and Input
-	topRow := lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		sectionStyle.Render(fmt.Sprintf("Loading: %s", m.spinner.View())),
-		sectionStyle.Render(fmt.Sprintf("Input: %s", m.input.View())),
-	)
+	// Error message
+	if m.error != "" {
+		sections = append(sections, errorStyle.Render(m.error))
+	}
 
-	// Middle row: List
-	listSection := sectionStyle.Render(m.list.View())
+	// Loading indicator
+	if m.loading {
+		sections = append(sections, loadingStyle.Render(fmt.Sprintf("⏳ %s Processing your request...", m.spinner.View())))
+	}
 
-	// Bottom row: Viewport
-	viewportSection := sectionStyle.Render(m.viewport.View())
+	// Chat viewport
+	chatSection := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Render(m.viewport.View())
+
+	// Input area
+	inputSection := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Padding(1, 2).
+		Render("💬 " + m.textarea.View())
 
 	// Combine all sections
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
-		sections[0],
-		topRow,
-		listSection,
-		viewportSection,
+		append(sections, chatSection, inputSection)...,
 	)
 
 	// Center the content
@@ -206,12 +369,12 @@ func (m model) View() string {
 func main() {
 	p := tea.NewProgram(
 		initialModel(),
-		tea.WithAltScreen(),       // Use alternate screen buffer
-		tea.WithMouseCellMotion(), // Turn on mouse support so we can track the mouse wheel
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 	)
 
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
+		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}
 }
