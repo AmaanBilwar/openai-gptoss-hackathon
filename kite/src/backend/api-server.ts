@@ -41,6 +41,38 @@ app.get('/auth/status', async (req, res) => {
   }
 });
 
+// Tools execution endpoint
+app.post('/api/tools/execute', async (req, res) => {
+  try {
+    const { tool, parameters } = req.body;
+
+    if (!tool || typeof tool !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Tool name is required and must be a string'
+      });
+    }
+
+    if (!parameters || typeof parameters !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: 'Parameters are required and must be an object'
+      });
+    }
+
+    // Execute the tool
+    const result = await caller.executeTool(tool, parameters);
+    res.json(result);
+
+  } catch (error) {
+    console.error('Tool execution error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
+  }
+});
+
 // Chat endpoint
 app.post('/chat', async (req, res) => {
   try {

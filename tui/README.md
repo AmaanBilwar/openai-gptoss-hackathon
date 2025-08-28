@@ -1,127 +1,200 @@
-# Kite CLI - Beautiful Go Terminal Interface
+# Kite Go CLI - Git Assistant with Tool Calling
 
-A stunning terminal-based interface for Kite, built with Go and Charm/Bubble Tea libraries.
+A Go-based terminal user interface (TUI) for Kite, your personal Git assistant powered by GPT-OSS. This CLI tool integrates with the TypeScript backend to provide intelligent Git operations and repository management.
 
 ## Features
 
-- 🎨 **Beautiful UI**: Modern terminal interface with colors, borders, and animations
-- 💬 **Interactive Chat**: Real-time conversation with AI assistant
-- 🔐 **Authentication**: Seamless integration with existing auth flow
-- ⚡ **Fast**: Built in Go for optimal performance
-- 📱 **Responsive**: Adapts to different terminal sizes
+- **Interactive TUI**: Beautiful terminal interface with markdown rendering
+- **Tool Calling**: Full integration with the TypeScript backend's tool system
+- **Git Operations**: Intelligent commit splitting, branch management, PR creation, and more
+- **Real-time Streaming**: Live response streaming from the Cerebras API
+- **Multi-turn Conversations**: Support for complex workflows requiring multiple tool calls
 
 ## Prerequisites
 
-1. **Go 1.21+** installed
-2. **TypeScript backend** running (see setup below)
-3. **Authentication** completed via web interface
+- Go 1.21 or later
+- Node.js and npm (for the TypeScript backend)
+- Cerebras API key
+- GitHub token (for Git operations)
 
 ## Setup
 
-### 1. Install Dependencies
+1. **Install Dependencies**:
+   ```bash
+   go mod tidy
+   ```
 
-```bash
-cd tui
-go mod tidy
+2. **Environment Variables**:
+   Create a `.env` file in the `tui` directory:
+   ```env
+   CEREBRAS_API_KEY=your_cerebras_api_key_here
+   BACKEND_URL=http://localhost:3001
+   ```
+
+3. **Start the TypeScript Backend**:
+   ```bash
+   cd ../kite
+   npm run dev
+   ```
+
+4. **Build and Run the CLI**:
+   ```bash
+   cd ../tui
+   go build -o cerebras-chat.exe .
+   ./cerebras-chat.exe
+   ```
+
+## Available Tools
+
+The CLI supports all tools from the TypeScript backend:
+
+### Git Operations
+- `checkout_branch` - Switch to a different branch
+- `create_branch` - Create a new branch
+- `commit_and_push` - Commit and push changes (with intelligent splitting)
+- `intelligent_commit_split` - Split changes into logical commits
+- `check_changes_threshold` - Check if changes exceed threshold
+- `check_git_status` - Check current Git status
+- `check_branch_exists` - Verify branch existence
+- `list_repository_commits` - List recent commits
+
+### Pull Request Management
+- `list_pull_requests` - List PRs in a repository
+- `get_pull_request` - Get PR details
+- `create_pr` - Create a new pull request
+- `update_pull_request` - Update PR details
+- `merge_pr` - Merge a pull request
+- `list_pull_request_commits` - List commits in a PR
+- `list_pull_request_files` - List files changed in a PR
+- `check_pull_request_merged` - Check if PR is merged
+- `update_pull_request_branch` - Update PR branch
+
+### Issue Management
+- `list_issues` - List issues in a repository
+- `get_issue` - Get issue details
+- `create_issue` - Create a new issue
+- `update_issue` - Update issue details
+
+### Repository Management
+- `list_repos` - List user repositories
+
+## Usage Examples
+
+### Basic Git Operations
+```
+You: commit and push with message "Add new feature"
+Bot: ✅ Successfully committed changes with message: 'Add new feature'
+     📤 Pushed to remote
 ```
 
-### 2. Start the TypeScript Backend
-
-In the `kite` directory:
-
-```bash
-# Install dependencies (if not already done)
-bun install
-
-# Start the API server
-bun run api:dev
+### Creating Pull Requests
+```
+You: create a pull request for my-feature branch
+Bot: I need some information to create the pull request:
+     - Repository name (owner/repo format)
+     - Title for the pull request
+     - Description
+     - Head branch (default: my-feature)
+     - Base branch (default: main)
 ```
 
-The API server will run on `http://localhost:3001`.
-
-### 3. Authenticate (First Time Only)
-
-1. Open your browser to `http://localhost:3000`
-2. Sign in with your GitHub account
-3. Complete the authentication flow
-4. Return to the terminal
-
-### 4. Run the Go CLI
-
-```bash
-cd tui
-go run main.go
+### Intelligent Commit Splitting
 ```
-
-## Usage
-
-- **Type your message** in the input area at the bottom
-- **Press Enter** to send your message
-- **Press Ctrl+C** or **q** to quit
-- **Scroll** through conversation history in the viewport
+You: split my large changes into logical commits
+Bot: 🚀 Large changes detected (1500 lines). Successfully executed intelligent commit splitting.
+     Created 3 logical commits:
+     1. feat: Add user authentication system
+     2. feat: Implement dashboard components
+     3. fix: Resolve login validation issues
+```
 
 ## Architecture
 
-```
-┌─────────────────┐    HTTP API    ┌──────────────────┐
-│   Go CLI        │ ◄────────────► │ TypeScript       │
-│   (Frontend)    │                │ Backend          │
-│                 │                │                  │
-│ • Beautiful UI  │                │ • AI Processing  │
-│ • User Input    │                │ • GitHub API     │
-│ • Display       │                │ • Auth Store     │
-└─────────────────┘                └──────────────────┘
-```
+### Components
+
+1. **CerebrasClient** (`cerebras.go`):
+   - Handles communication with Cerebras API
+   - Manages streaming responses
+   - Integrates tool calling capabilities
+
+2. **BackendClient** (`tools.go`):
+   - Communicates with TypeScript backend
+   - Executes tools via HTTP API
+   - Handles tool result formatting
+
+3. **TUI Model** (`main.go`):
+   - Manages the terminal interface
+   - Handles user input and display
+   - Coordinates between Cerebras and backend
+
+### Tool Calling Flow
+
+1. User sends a message requesting a Git operation
+2. Cerebras API analyzes the request and identifies needed tools
+3. Go CLI receives tool calls and forwards them to TypeScript backend
+4. Backend executes the tools (Git operations, GitHub API calls)
+5. Results are returned to the CLI and displayed to the user
 
 ## Development
 
-### Adding New Features
+### Adding New Tools
 
-1. **Backend**: Add new endpoints to `kite/src/backend/api-server.ts`
-2. **Frontend**: Update the Go CLI in `tui/main.go`
+1. **Define the tool** in `tools.go`:
+   ```go
+   {
+       Type: "function",
+       Function: struct {
+           Name        string                 `json:"name"`
+           Description string                 `json:"description"`
+           Parameters  map[string]interface{} `json:"parameters"`
+       }{
+           Name:        "your_tool_name",
+           Description: "Description of what the tool does",
+           Parameters: map[string]interface{}{
+               // Define parameters
+           },
+       },
+   }
+   ```
 
-### Styling
+2. **Implement the tool** in the TypeScript backend (`toolCalling.ts`)
 
-The UI uses Charm's Lip Gloss library for styling. Colors and layouts can be customized in the `View()` function.
+3. **Update the backend API** if needed
 
-### API Endpoints
+### Building for Distribution
 
-- `GET /health` - Health check
-- `GET /auth/status` - Check authentication
-- `POST /chat` - Send chat message
+```bash
+# Windows
+go build -o cerebras-chat.exe .
+
+# Linux/macOS
+go build -o cerebras-chat .
+```
 
 ## Troubleshooting
 
-### "Not authenticated" Error
+### Common Issues
 
-1. Make sure the web server is running: `bun run dev`
-2. Visit `http://localhost:3000` and sign in
-3. Complete the authentication flow
-4. Try the CLI again
+1. **Backend Connection Failed**:
+   - Ensure the TypeScript backend is running on `http://localhost:3001`
+   - Check `BACKEND_URL` environment variable
 
-### "Connection refused" Error
+2. **Cerebras API Errors**:
+   - Verify `CEREBRAS_API_KEY` is set correctly
+   - Check API key permissions and quotas
 
-1. Make sure the API server is running: `bun run api:dev`
-2. Check that it's running on port 3001
-3. Verify the health endpoint: `curl http://localhost:3001/health`
+3. **Git Operations Fail**:
+   - Ensure you're in a Git repository
+   - Check GitHub token permissions
+   - Verify repository access
 
-### Build Issues
+### Debug Mode
 
+Set environment variable for verbose logging:
 ```bash
-# Clean and rebuild
-go clean
-go mod tidy
-go run main.go
+export DEBUG=true
+./cerebras-chat.exe
 ```
-
-## Future Enhancements
-
-- [ ] gRPC support for better performance
-- [ ] Streaming responses
-- [ ] File upload/download
-- [ ] Repository browsing
-- [ ] Pull request management
-- [ ] Issue tracking
 
 ## Contributing
 
@@ -133,4 +206,4 @@ go run main.go
 
 ## License
 
-MIT License - see LICENSE file for details.
+This project is part of the GPT-OSS hackathon project.

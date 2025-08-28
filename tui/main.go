@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"net/http"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -16,365 +14,637 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// API client for communicating with TypeScript backend
-type APIClient struct {
-	baseURL string
-	client  *http.Client
+const gap = "\n\n"
+
+// Available spinners
+var spinners = []spinner.Spinner{
+	spinner.Points,
 }
 
-func NewAPIClient(baseURL string) *APIClient {
-	return &APIClient{
-		baseURL: baseURL,
-		client:  &http.Client{Timeout: 30 * time.Second},
+// Simple markdown renderer for CLI responses
+func renderMarkdown(content string) string {
+	if content == "" {
+		return content
+	}
+
+	// Simple markdown parsing for common elements
+	lines := strings.Split(content, "\n")
+	var result []string
+
+	for _, line := range lines {
+		// Handle headers
+		if strings.HasPrefix(line, "# ") {
+			title := strings.TrimPrefix(line, "# ")
+			result = append(result, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).Render(title))
+		} else if strings.HasPrefix(line, "## ") {
+			title := strings.TrimPrefix(line, "## ")
+			result = append(result, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252")).Render(title))
+		} else if strings.HasPrefix(line, "### ") {
+			title := strings.TrimPrefix(line, "### ")
+			result = append(result, lipgloss.NewStyle().Bold(true).Render(title))
+		} else if strings.HasPrefix(line, "**") && strings.HasSuffix(line, "**") {
+			// Bold text
+			boldText := strings.TrimPrefix(strings.TrimSuffix(line, "**"), "**")
+			result = append(result, lipgloss.NewStyle().Bold(true).Render(boldText))
+		} else if strings.HasPrefix(line, "* ") {
+			// Bullet points
+			bullet := strings.TrimPrefix(line, "* ")
+			result = append(result, "• "+bullet)
+		} else if strings.HasPrefix(line, "- ") {
+			// Bullet points
+			bullet := strings.TrimPrefix(line, "- ")
+			result = append(result, "• "+bullet)
+		} else if strings.Contains(line, "🔐") || strings.Contains(line, "✅") || strings.Contains(line, "⏳") {
+			// Emoji lines - keep as is
+			result = append(result, line)
+		} else {
+			// Regular text
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// renderMarkdownWithWidth renders markdown content with a specific width
+func renderMarkdownWithWidth(content string, width int) string {
+	// For now, use the same renderer but with word wrapping
+	rendered := renderMarkdown(content)
+
+	// Simple word wrapping
+	lines := strings.Split(rendered, "\n")
+	var wrappedLines []string
+
+	for _, line := range lines {
+		if len(line) <= width {
+			wrappedLines = append(wrappedLines, line)
+		} else {
+			// Simple word wrap
+			words := strings.Fields(line)
+			currentLine := ""
+
+			for _, word := range words {
+				if len(currentLine)+len(word)+1 <= width {
+					if currentLine != "" {
+						currentLine += " " + word
+					} else {
+						currentLine = word
+					}
+				} else {
+					if currentLine != "" {
+						wrappedLines = append(wrappedLines, currentLine)
+					}
+					currentLine = word
+				}
+			}
+
+			if currentLine != "" {
+				wrappedLines = append(wrappedLines, currentLine)
+			}
+		}
+	}
+
+	return strings.Join(wrappedLines, "\n")
+}
+
+var (
+	textStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
+	// helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+)
+
+func main() {
+	// Check if we're running in test mode
+	if len(os.Args) > 1 && os.Args[1] == "test" {
+		testToolCalling()
+		return
+	}
+
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+
+	if _, err := p.Run(); err != nil {
+		log.Fatal(err)
 	}
 }
 
-func (c *APIClient) CheckHealth() error {
-	resp, err := c.client.Get(c.baseURL + "/health")
+func testToolCalling() {
+	fmt.Println("Testing Kite Go CLI Tool Calling...")
+
+	// Test backend client initialization
+	_, err := NewBackendClient()
 	if err != nil {
-		return err
+		log.Printf("Failed to initialize backend client: %v", err)
+	} else {
+		fmt.Println("✅ Backend client initialized successfully")
 	}
-	defer resp.Body.Close()
-	return nil
-}
 
-func (c *APIClient) CheckAuth() (bool, error) {
-	resp, err := c.client.Get(c.baseURL + "/auth/status")
+	// Test tools definition
+	tools := GetTools()
+	fmt.Printf("✅ Loaded %d tools\n", len(tools))
+
+	// Test git action detection
+	testTools := []string{
+		"checkout_branch",
+		"commit_and_push",
+		"create_pr",
+		"list_repos",
+		"get_issue",
+	}
+
+	for _, tool := range testTools {
+		isGit := IsGitAction(tool)
+		fmt.Printf("Tool '%s': Git action = %t\n", tool, isGit)
+	}
+
+	// Test Cerebras client initialization
+	cerebras, err := NewCerebrasClient()
 	if err != nil {
-		return false, err
+		log.Printf("Failed to initialize Cerebras client: %v", err)
+		fmt.Println("⚠️  Cerebras client not available (check CEREBRAS_API_KEY)")
+	} else {
+		fmt.Println("✅ Cerebras client initialized successfully")
+		if cerebras.backend != nil {
+			fmt.Println("✅ Backend integration available")
+		} else {
+			fmt.Println("⚠️  Backend integration not available")
+		}
 	}
-	defer resp.Body.Close()
 
-	var result struct {
-		Authenticated bool `json:"authenticated"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return false, err
-	}
-	return result.Authenticated, nil
+	fmt.Println("\n🎉 Tool calling setup complete!")
+	fmt.Println("\nTo test the full functionality:")
+	fmt.Println("1. Start the TypeScript backend: cd ../kite && npm run dev")
+	fmt.Println("2. Set your CEREBRAS_API_KEY environment variable")
+	fmt.Println("3. Run: go run .")
 }
 
-func (c *APIClient) SendMessage(messages []ChatMessage) (string, error) {
-	payload := map[string]interface{}{
-		"messages": messages,
-		"stream":   false,
-	}
+type (
+	errMsg error
+)
 
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := c.client.Post(c.baseURL+"/chat", "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Response string `json:"response"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	return result.Response, nil
-}
-
-// Chat message structure
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// Model represents the main application state
 type model struct {
-	apiClient   *APIClient
-	messages    []ChatMessage
-	viewport    viewport.Model
-	textarea    textarea.Model
-	spinner     spinner.Model
-	ready       bool
-	width       int
-	height      int
-	loading     bool
-	error       string
-	authChecked bool
+	viewport        viewport.Model
+	messages        []string
+	textarea        textarea.Model
+	senderStyle     lipgloss.Style
+	err             error
+	spinner         spinner.Model
+	spinnerIdx      int
+	isSpinning      bool
+	spinnerMsg      string
+	cerebras        *CerebrasClient
+	auth            *AuthClient
+	chatHistory     []CerebrasMessage
+	currentResponse string
+	isStreaming     bool
+	responseChan    <-chan string
+	errorChan       <-chan error
 }
 
-// Initial model
 func initialModel() model {
-	// Initialize API client
-	apiClient := NewAPIClient("http://localhost:3001")
+	ta := textarea.New()
+	ta.Placeholder = "Send a message..."
+	ta.Focus()
+
+	ta.Prompt = ">> "
+	ta.CharLimit = 280
+
+	ta.SetWidth(30)
+	ta.SetHeight(1)
+
+	// Remove cursor line styling
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+
+	ta.ShowLineNumbers = false
+
+	vp := viewport.New(30, 5)
+	welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
+
+Type a message and press **Enter** to send.`
+	renderedWelcome := renderMarkdown(welcomeMessage)
+	vp.SetContent(renderedWelcome)
+	vp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
+
+	ta.KeyMap.InsertNewline.SetEnabled(false)
 
 	// Initialize spinner
 	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = spinnerStyle
+	s.Spinner = spinners[0]
 
-	// Initialize textarea
-	ta := textarea.New()
-	ta.Placeholder = "Ask me anything about your GitHub repositories..."
-	ta.Focus()
-	ta.CharLimit = 1000
-	ta.SetHeight(3)
+	// Initialize Cerebras client
+	cerebras, err := NewCerebrasClient()
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Cerebras client: %v", err)
+	}
 
-	// Initialize viewport
-	vp := viewport.New(80, 20)
-	vp.Style = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62"))
+	// Initialize auth client
+	auth := NewAuthClient()
 
 	return model{
-		apiClient: apiClient,
-		messages:  []ChatMessage{},
-		viewport:  vp,
-		textarea:  ta,
-		spinner:   s,
+		textarea:        ta,
+		messages:        []string{},
+		viewport:        vp,
+		senderStyle:     lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
+		err:             nil,
+		spinner:         s,
+		spinnerIdx:      0,
+		isSpinning:      false,
+		spinnerMsg:      "",
+		cerebras:        cerebras,
+		auth:            auth,
+		chatHistory:     []CerebrasMessage{},
+		currentResponse: "",
+		isStreaming:     false,
+		responseChan:    nil,
+		errorChan:       nil,
 	}
 }
 
-// Init function
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
-		spinner.Tick,
 		textarea.Blink,
-		m.checkAPIHealth(),
+		m.spinner.Tick,
+		tea.SetWindowTitle("Kite - Your Personal Git Assistant"),
+		m.checkAuthOnStartup(),
 	)
 }
 
-// Commands
-func (m model) checkAPIHealth() tea.Cmd {
-	return func() tea.Msg {
-		if err := m.apiClient.CheckHealth(); err != nil {
-			return errorMsg{err.Error()}
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		tiCmd tea.Cmd
+		vpCmd tea.Cmd
+		spCmd tea.Cmd
+	)
+
+	m.textarea, tiCmd = m.textarea.Update(msg)
+	m.viewport, vpCmd = m.viewport.Update(msg)
+	m.spinner, spCmd = m.spinner.Update(msg)
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.viewport.Width = msg.Width
+		m.textarea.SetWidth(msg.Width)
+		// Calculate viewport height with proper spacing
+		textareaHeight := m.textarea.Height()
+		gapHeight := lipgloss.Height(gap)
+		m.viewport.Height = msg.Height - textareaHeight - gapHeight - 2 // Extra margin
+
+		if len(m.messages) > 0 {
+			// Join messages and render markdown for the entire content
+			content := strings.Join(m.messages, "\n")
+			// Apply width constraint to prevent overflow and ensure clean rendering
+			styledContent := lipgloss.NewStyle().
+				Width(m.viewport.Width - 4).
+				Height(m.viewport.Height).
+				Render(content)
+			m.viewport.SetContent(styledContent)
 		}
-		return healthCheckMsg{true}
+		m.viewport.GotoBottom()
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyCtrlC, tea.KeyEsc:
+			fmt.Println(m.textarea.Value())
+			return m, tea.Quit
+		case tea.KeyEnter:
+			if m.isStreaming {
+				// Don't allow new messages while streaming
+				return m, nil
+			}
+
+			message := m.textarea.Value()
+			if message == "" {
+				return m, nil
+			}
+
+			m.messages = append(m.messages, m.senderStyle.Render("You: ")+message)
+
+			// Add user message to chat history
+			m.chatHistory = append(m.chatHistory, CerebrasMessage{
+				Role:    "user",
+				Content: message,
+			})
+
+			// Start streaming response
+			if m.cerebras != nil {
+				m.startSpinner("Kite is cooking...")
+				m.isStreaming = true
+				m.currentResponse = ""
+				// Add empty bot message that will be filled with streaming content
+				m.messages = append(m.messages, textStyle.Render("Bot: "))
+
+				return m, m.makeAPIRequest()
+			} else {
+				// Fallback if Cerebras client is not available
+				m.startSpinner("Cerebras client not available...")
+				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return spinnerCompleteMsg{response: "**Error:** Cerebras client not initialized. Please check your `CEREBRAS_API_KEY` environment variable."}
+				})
+			}
+		}
+	case spinnerCompleteMsg:
+		m.stopSpinner()
+		// Render markdown for the bot response
+		renderedResponse := renderMarkdown(msg.response)
+		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedResponse)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.textarea.Reset()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case streamingChunkMsg:
+		// Update the current response with the new chunk
+		m.currentResponse += msg.chunk
+
+		// Update the last message with the current streaming content (render markdown)
+		if len(m.messages) > 0 {
+			renderedResponse := renderMarkdownWithWidth(m.currentResponse, m.viewport.Width)
+			m.messages[len(m.messages)-1] = textStyle.Render("Bot: ") + renderedResponse
+			styledContent := lipgloss.NewStyle().
+				Width(m.viewport.Width - 4).
+				Height(m.viewport.Height).
+				Render(strings.Join(m.messages, "\n"))
+			m.viewport.SetContent(styledContent)
+			m.viewport.GotoBottom()
+		}
+
+		// Continue listening for more chunks using stored channels
+		return m, m.handleStreaming(m.responseChan, m.errorChan)
+
+	case startStreamingMsg:
+		// Store the channels in the model
+		m.responseChan = msg.responseChan
+		m.errorChan = msg.errorChan
+		// Start the streaming
+		return m, m.handleStreaming(msg.responseChan, msg.errorChan)
+
+	case apiResponseMsg:
+		m.isStreaming = false
+		m.stopSpinner()
+		// Clear the channels
+		m.responseChan = nil
+		m.errorChan = nil
+
+		// Add assistant message to chat history
+		if msg.response != "" {
+			m.chatHistory = append(m.chatHistory, CerebrasMessage{
+				Role:    "assistant",
+				Content: msg.response,
+			})
+		}
+
+		// Update the last message with the full response (render markdown)
+		if len(m.messages) > 0 {
+			renderedResponse := renderMarkdownWithWidth(msg.response, m.viewport.Width)
+			m.messages[len(m.messages)-1] = textStyle.Render("Bot: ") + renderedResponse
+			styledContent := lipgloss.NewStyle().
+				Width(m.viewport.Width - 4).
+				Height(m.viewport.Height).
+				Render(strings.Join(m.messages, "\n"))
+			m.viewport.SetContent(styledContent)
+			m.viewport.GotoBottom()
+		}
+
+		m.textarea.Reset()
+		return m, nil
+
+	case authRequiredMsg:
+		m.isStreaming = false
+		m.stopSpinner()
+		// Clear the channels
+		m.responseChan = nil
+		m.errorChan = nil
+
+		// Show authentication message
+		authMessage := "🔐 **You are not authenticated.** Let's authenticate you first!\n\nI'll open your browser to complete the authentication process."
+		renderedAuth := renderMarkdown(authMessage)
+		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedAuth)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.viewport.GotoBottom()
+
+		// Start authentication flow
+		return m, m.startAuthFlow()
+
+	case authCompleteMsg:
+		// Authentication completed, show success message
+		successMessage := "✅ **Authentication completed successfully!**\n\nYou can now continue using Kite with all features."
+		renderedSuccess := renderMarkdown(successMessage)
+		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedSuccess)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.textarea.Reset()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case apiErrorMsg:
+		m.isStreaming = false
+		m.stopSpinner()
+		// Clear the channels
+		m.responseChan = nil
+		m.errorChan = nil
+		// Render error message as markdown (in case it contains formatting)
+		renderedError := renderMarkdown("Error: " + msg.error)
+		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedError)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.textarea.Reset()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	// We handle errors just like any other message
+	case errMsg:
+		m.err = msg
+		return m, nil
+	}
+
+	return m, tea.Batch(tiCmd, vpCmd, spCmd)
+}
+
+func (m *model) makeAPIRequest() tea.Cmd {
+	return func() tea.Msg {
+		// Check authentication first
+		if m.auth != nil {
+			authenticated, err := m.auth.CheckAuthStatus()
+			if err != nil {
+				return apiErrorMsg{error: fmt.Sprintf("Failed to check authentication status: %v", err)}
+			}
+
+			if !authenticated {
+				// Return a special message to trigger auth flow
+				return authRequiredMsg{}
+			}
+		}
+
+		// Create channels for the API call
+		responseChan := make(chan string)
+		errorChan := make(chan error)
+
+		// Start the API call in a goroutine
+		go func() {
+			// Use tool calling if backend is available, otherwise fall back to regular chat
+			if m.cerebras.backend != nil {
+				m.cerebras.StreamChatCompletionWithTools(m.chatHistory, responseChan, errorChan)
+			} else {
+				m.cerebras.StreamChatCompletion(m.chatHistory, responseChan, errorChan)
+			}
+		}()
+
+		// Return a command that will handle streaming
+		return startStreamingMsg{
+			responseChan: responseChan,
+			errorChan:    errorChan,
+		}
 	}
 }
 
-func (m model) checkAuth() tea.Cmd {
+func (m *model) handleStreaming(responseChan <-chan string, errorChan <-chan error) tea.Cmd {
 	return func() tea.Msg {
-		authenticated, err := m.apiClient.CheckAuth()
-		if err != nil {
-			return errorMsg{err.Error()}
+		select {
+		case content, ok := <-responseChan:
+			if !ok {
+				// Response channel closed, finish streaming
+				if m.currentResponse != "" {
+					return apiResponseMsg{response: m.currentResponse}
+				} else {
+					// Check error channel
+					select {
+					case err, ok := <-errorChan:
+						if ok {
+							return apiErrorMsg{error: err.Error()}
+						}
+					default:
+					}
+					return apiErrorMsg{error: "No response received"}
+				}
+			}
+			// Send the chunk for immediate display
+			return streamingChunkMsg{chunk: content}
+		case err, ok := <-errorChan:
+			if !ok {
+				// Error channel closed, check if we have a response
+				if m.currentResponse != "" {
+					return apiResponseMsg{response: m.currentResponse}
+				}
+				return apiErrorMsg{error: "No response received"}
+			}
+			return apiErrorMsg{error: err.Error()}
 		}
-		return authCheckMsg{authenticated}
 	}
 }
 
-func (m model) sendMessage() tea.Cmd {
+func (m *model) startSpinner(message string) {
+	m.isSpinning = true
+	m.spinnerMsg = message
+	// Cycle to next spinner
+	m.spinnerIdx = (m.spinnerIdx + 1) % len(spinners)
+	m.spinner.Spinner = spinners[m.spinnerIdx]
+}
+
+func (m *model) stopSpinner() {
+	m.isSpinning = false
+	m.spinnerMsg = ""
+}
+
+func (m *model) checkAuthOnStartup() tea.Cmd {
 	return func() tea.Msg {
-		content := strings.TrimSpace(m.textarea.Value())
-		if content == "" {
-			return nil
+		// Check authentication status on startup
+		if m.auth != nil {
+			authenticated, err := m.auth.CheckAuthStatus()
+			if err != nil {
+				// Log error but don't show to user yet
+				log.Printf("Failed to check auth status on startup: %v", err)
+				return nil
+			}
+
+			if !authenticated {
+				// Return auth required message to trigger auth flow
+				return authRequiredMsg{}
+			}
 		}
-
-		// Add user message
-		userMsg := ChatMessage{Role: "user", Content: content}
-		messages := append(m.messages, userMsg)
-
-		// Send to API
-		response, err := m.apiClient.SendMessage(messages)
-		if err != nil {
-			return errorMsg{err.Error()}
-		}
-
-		// Add assistant message
-		assistantMsg := ChatMessage{Role: "assistant", Content: response}
-		messages = append(messages, assistantMsg)
-
-		return messageResponseMsg{
-			userMessage:      userMsg,
-			assistantMessage: assistantMsg,
-		}
+		return nil
 	}
 }
 
-// Messages
-type healthCheckMsg struct {
-	healthy bool
+func (m *model) startAuthFlow() tea.Cmd {
+	return func() tea.Msg {
+		// Start authentication in a goroutine
+		go func() {
+			if m.auth != nil {
+				if err := m.auth.StartAuthFlow(); err != nil {
+					// Send error message back to the UI
+					// We'll handle this by updating the UI directly
+					fmt.Printf("Authentication failed: %v\n", err)
+				} else {
+					// Authentication successful, update the UI
+					fmt.Println("✅ Authentication completed successfully!")
+				}
+			}
+		}()
+
+		// Return a command that will show a waiting message
+		return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return authCompleteMsg{}
+		})
+	}
 }
 
-type authCheckMsg struct {
-	authenticated bool
+func (m model) View() string {
+	content := m.viewport.View()
+
+	// Add spinner if active
+	if m.isSpinning {
+		spinnerContent := fmt.Sprintf("\n %s %s", m.spinner.View(), textStyle.Render(m.spinnerMsg))
+		content += spinnerContent
+	}
+
+	// Ensure proper spacing and prevent overlapping
+	return lipgloss.NewStyle().
+		Margin(0, 1).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Render(fmt.Sprintf(
+			"%s%s%s",
+			content,
+			gap,
+			m.textarea.View(),
+		))
 }
 
-type messageResponseMsg struct {
-	userMessage      ChatMessage
-	assistantMessage ChatMessage
+// Custom message types
+type spinnerCompleteMsg struct {
+	response string
 }
 
-type errorMsg struct {
+type apiResponseMsg struct {
+	response string
+}
+
+type authRequiredMsg struct{}
+
+type authCompleteMsg struct{}
+
+type apiErrorMsg struct {
 	error string
 }
 
-// Update function
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "enter":
-			if !m.loading && m.authChecked {
-				m.loading = true
-				return m, tea.Batch(
-					spinner.Tick,
-					m.sendMessage(),
-				)
-			}
-		}
-
-	case healthCheckMsg:
-		if msg.healthy {
-			return m, m.checkAuth()
-		}
-
-	case authCheckMsg:
-		m.authChecked = true
-		if !msg.authenticated {
-			m.error = "❌ Not authenticated. Please run the web app first and sign in."
-		}
-
-	case messageResponseMsg:
-		m.loading = false
-		m.messages = append(m.messages, msg.userMessage, msg.assistantMessage)
-		m.textarea.SetValue("")
-		m.updateViewport()
-
-	case errorMsg:
-		m.loading = false
-		m.error = "❌ " + msg.error
-
-	case tea.WindowSizeMsg:
-		if !m.ready {
-			m.width = msg.Width
-			m.height = msg.Height
-			m.ready = true
-			m.updateViewport()
-		}
-	}
-
-	// Update components
-	var cmd tea.Cmd
-	m.spinner, cmd = m.spinner.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.textarea, cmd = m.textarea.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
-
-	return m, tea.Batch(cmds...)
+type streamingChunkMsg struct {
+	chunk string
 }
 
-func (m *model) updateViewport() {
-	var content strings.Builder
-
-	// Add welcome message if no messages
-	if len(m.messages) == 0 {
-		content.WriteString("🤖 Welcome to Kite CLI!\n\n")
-		content.WriteString("Ask me anything about your GitHub repositories.\n")
-		content.WriteString("I can help you with:\n")
-		content.WriteString("• Repository management\n")
-		content.WriteString("• Code analysis\n")
-		content.WriteString("• Pull request reviews\n")
-		content.WriteString("• And much more!\n\n")
-		content.WriteString("Type your question below and press Enter.\n")
-	} else {
-		// Display conversation
-		for _, msg := range m.messages {
-			if msg.Role == "user" {
-				content.WriteString("👤 You: " + msg.Content + "\n\n")
-			} else {
-				content.WriteString("🤖 Kite: " + msg.Content + "\n\n")
-			}
-		}
-	}
-
-	m.viewport.SetContent(content.String())
-	m.viewport.GotoBottom()
-}
-
-// View function
-func (m model) View() string {
-	if !m.ready {
-		return "\n  Initializing..."
-	}
-
-	// Define styles
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FAFAFA")).
-		Background(lipgloss.Color("#7D56F4")).
-		Padding(0, 1).
-		Bold(true)
-
-	errorStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FF6B6B")).
-		Padding(0, 1)
-
-	loadingStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#4ECDC4")).
-		Padding(0, 1)
-
-	// Create the layout
-	var sections []string
-
-	// Title
-	sections = append(sections, titleStyle.Render("🚀 Kite CLI - AI GitHub Assistant"))
-
-	// Error message
-	if m.error != "" {
-		sections = append(sections, errorStyle.Render(m.error))
-	}
-
-	// Loading indicator
-	if m.loading {
-		sections = append(sections, loadingStyle.Render(fmt.Sprintf("⏳ %s Processing your request...", m.spinner.View())))
-	}
-
-	// Chat viewport
-	chatSection := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2).
-		Render(m.viewport.View())
-
-	// Input area
-	inputSection := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2).
-		Render("💬 " + m.textarea.View())
-
-	// Combine all sections
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		append(sections, chatSection, inputSection)...,
-	)
-
-	// Center the content
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		content,
-	)
-}
-
-func main() {
-	p := tea.NewProgram(
-		initialModel(),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-	)
-
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("Error: %v", err)
-		os.Exit(1)
-	}
+type startStreamingMsg struct {
+	responseChan <-chan string
+	errorChan    <-chan error
 }

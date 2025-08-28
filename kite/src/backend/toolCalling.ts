@@ -1161,7 +1161,7 @@ Instructions:
       if (message.role === 'user') {
         apiMessages.push({
           role: 'user',
-          content: message.content + '\n\nIMPORTANT: If you need to use a tool, do not write any text content - only make the tool call.'
+          content: message.content
         });
       }
     }
@@ -1172,6 +1172,8 @@ Instructions:
       
       while (turnCount < maxTurns) {
         turnCount++;
+        
+        console.log(`Turn ${turnCount}: Making API call with ${apiMessages.length} messages`);
         
         // Make API call
         const response = await this.client.chat.completions.create({
@@ -1186,6 +1188,8 @@ Instructions:
         const choice = (response as any).choices[0];
         const message = choice.message;
         
+        console.log(`Turn ${turnCount}: Response received, tool_calls:`, message.tool_calls ? message.tool_calls.length : 0);
+        
         // If no tool calls, we're done - stream the final response
         if (!message.tool_calls || message.tool_calls.length === 0) {
           // Only yield content if it's meaningful and not just tool execution commentary
@@ -1198,15 +1202,20 @@ Instructions:
         }
         
         // Save the assistant's message with tool calls
-        apiMessages.push({
+        const assistantMessage = {
           role: 'assistant',
           content: message.content || '',
           tool_calls: message.tool_calls
-        });
+        };
+        
+        console.log(`Turn ${turnCount}: Adding assistant message with ${message.tool_calls.length} tool calls`);
+        apiMessages.push(assistantMessage);
         
         // Execute all tool calls sequentially
         for (const toolCall of message.tool_calls) {
           try {
+            console.log(`Turn ${turnCount}: Executing tool call ${toolCall.id} - ${toolCall.function.name}`);
+            
             const toolName = toolCall.function.name;
             const argsStr = toolCall.function.arguments || '{}';
             const parameters = JSON.parse(argsStr);
@@ -1221,22 +1230,29 @@ Instructions:
             yield `\n\n${userMessage}`;
             
             // Add tool response to conversation for next turn
-            apiMessages.push({
+            const toolMessage = {
               role: 'tool',
               content: JSON.stringify(result),
               tool_call_id: toolCall.id
-            });
+            };
+            
+            console.log(`Turn ${turnCount}: Adding tool response for call ${toolCall.id}`);
+            apiMessages.push(toolMessage);
             
           } catch (error) {
+            console.error(`Turn ${turnCount}: Error executing tool call ${toolCall.id}:`, error);
+            
             const errorMessage = `❌ Error executing tool: ${error instanceof Error ? error.message : 'Unknown error'}`;
             yield `\n\n${errorMessage}`;
             
             // Add error response to conversation
-            apiMessages.push({
+            const errorToolMessage = {
               role: 'tool',
               content: JSON.stringify({ success: false, error: errorMessage }),
               tool_call_id: toolCall.id
-            });
+            };
+            
+            apiMessages.push(errorToolMessage);
           }
         }
       }
@@ -1246,6 +1262,7 @@ Instructions:
       }
       
     } catch (error) {
+      console.error('Error in callToolsStream:', error);
       yield `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   }
