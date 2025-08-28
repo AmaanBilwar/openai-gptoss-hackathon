@@ -315,6 +315,19 @@ export interface FileChange {
   diff_content: string;
   total_lines_added: number;
   total_lines_removed: number;
+  hunks?: DiffHunk[];
+}
+
+export interface DiffHunk {
+  filePath: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  changeType: 'staged' | 'unstaged';
+  header: string;
+  content: string[];
+  context: string;
 }
 
 export interface CommitGroup {
@@ -332,7 +345,23 @@ export interface SupermemoryMemory {
 
 export interface SupermemorySearchResult {
   results: any[];
+  memories?: any[];
   summary?: string;
+}
+
+export interface SemanticRelationship {
+  type: 'imports' | 'calls' | 'tests' | 'configures' | 'similar_logic' | 'shared_types';
+  strength: number; // 0-1 based on evidence
+  evidence: string[]; // Why they're related
+  files: [string, string]; // The two related files
+}
+
+export interface CodeContext {
+  functions: string[];
+  imports: string[];
+  exports: string[];
+  types: string[];
+  keywords: string[];
 }
 
 export interface SupermemoryClient {

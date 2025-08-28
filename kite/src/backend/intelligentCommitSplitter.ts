@@ -2,24 +2,56 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { SupermemoryClient } from './supermemoryClient';
 import { CerebrasLLM } from './cerebrasLLM';
-import { FileChange, CommitGroup } from './types';
+import { FileChange, CommitGroup, DiffHunk } from './types';
+import parse from "parse-diff";
+import { pipeline, env } from '@xenova/transformers';
 
 const execAsync = promisify(exec);
+
+// Initialize local embedding model
+let embeddingModel: any = null;
+const initializeEmbeddingModel = async () => {
+  if (!embeddingModel) {
+    console.log('🔄 Initializing local embedding model...');
+    embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    console.log('✅ Local embedding model ready');
+  }
+  return embeddingModel;
+};
+
+const generateCodeEmbeddings = async (
+  codeSnippets: string[]
+): Promise<Array<{ embedding: number[]; content: string }>> => {
+  try {
+    const model = await initializeEmbeddingModel();
+    
+    const embeddings = await Promise.all(
+      codeSnippets.map(async (snippet) => {
+        const result = await model(snippet, { pooling: 'mean', normalize: true });
+        return Array.from(result.data);
+      })
+    );
+
+    return embeddings.map((embedding, index) => ({
+      content: codeSnippets[index]!,
+      embedding: embedding as number[],
+    }));
+  } catch (error) {
+    console.warn('⚠️  Local embedding model failed, falling back to simple text clustering');
+    console.error('Embedding error:', error);
+    throw error;
+  }
+};
+
 
 /**
  * Main class for intelligent commit splitting
  */
 export class IntelligentCommitSplitter {
-  private supermemory: SupermemoryClient;
   private cerebras: CerebrasLLM;
-  private sessionId: string;
-
-  constructor(supermemoryApiKey: string, cerebrasApiKey: string) {
-    this.supermemory = new SupermemoryClient(supermemoryApiKey);
+  constructor(cerebrasApiKey: string) {
     this.cerebras = new CerebrasLLM(cerebrasApiKey);
-    this.sessionId = `commit_split_${process.pid}`;
   }
 
   /**
@@ -63,6 +95,51 @@ export class IntelligentCommitSplitter {
       console.error('Error getting git diff files:', error);
       return [];
     }
+  }
+
+  /**
+   * Get git diff hunks from the files, and group diff by hunks
+   */
+  async getGitDiffHunks(filePath: string): Promise<DiffHunk[]> {
+    const { stdout: stdoutStaged } = await execAsync(`git diff --cached --unified=3 ${filePath}`);
+    const { stdout: stdoutUnstaged } = await execAsync(`git diff --unified=3 ${filePath}`);
+    const diffStaged = parse(stdoutStaged);
+    const diffUnstaged = parse(stdoutUnstaged);
+    const hunks: DiffHunk[] = [];
+
+    for (const file of diffStaged) {
+      for (const hunk of file.chunks) {
+        hunks.push({
+          filePath: file.to || file.from || '',
+          oldStart: hunk.oldStart,
+          oldLines: hunk.oldLines,
+          newStart: hunk.newStart,
+          newLines: hunk.newLines,
+          changeType: 'staged',
+          header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+          content: hunk.changes.map(change => change.content),
+          context: hunk.changes.map(change => change.content).join('\n')
+        });
+      }
+    }
+
+    for (const file of diffUnstaged) {
+      for (const hunk of file.chunks) {
+        hunks.push({
+          filePath: file.to || file.from || '',
+          oldStart: hunk.oldStart,
+          oldLines: hunk.oldLines,
+          newStart: hunk.newStart,
+          newLines: hunk.newLines,
+          changeType: 'unstaged',
+          header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+          content: hunk.changes.map(change => change.content),
+          context: hunk.changes.map(change => change.content).join('\n')
+        });
+      }
+    }
+
+    return hunks;
   }
 
   /**
@@ -137,6 +214,7 @@ export class IntelligentCommitSplitter {
     for (const filePath of changedFiles) {
       const changeType = await this.determineChangeType(filePath);
       const diffContent = await this.getFileDiff(filePath);
+      const hunks = await this.getGitDiffHunks(filePath);
 
       // Get before and after content
       let beforeContent: string | null = null;
@@ -172,7 +250,8 @@ export class IntelligentCommitSplitter {
         after_content: afterContent || undefined,
         diff_content: diffContent,
         total_lines_added: linesAdded,
-        total_lines_removed: linesRemoved
+        total_lines_removed: linesRemoved,
+        hunks: hunks
       });
     }
 
@@ -180,135 +259,70 @@ export class IntelligentCommitSplitter {
   }
 
   /**
-   * Upload before/after file contents to Supermemory for semantic analysis
+   * Vectorize hunks using lightweight embeddings
    */
-  private async uploadToSupermemory(changes: FileChange[]): Promise<string[]> {
-    console.log('📤 Uploading file contents to Supermemory for semantic analysis...');
+  private async vectorizeHunks(changes: FileChange[]): Promise<Array<{hunk: DiffHunk, embedding: number[], changeIndex: number}>> {
+    console.log('🔢 Vectorizing hunks using lightweight embeddings...');
 
-    const memoryIds: string[] = [];
+    const hunkData: Array<{hunk: DiffHunk, embedding: number[], changeIndex: number}> = [];
+    const textContents: string[] = [];
 
-    for (const change of changes) {
-      // Upload before content if it exists
-      if (change.before_content) {
-        console.log(`   📤 Uploading before content for ${change.file_path}`);
-        try {
-          const response = await this.supermemory.addMemory(
-            change.before_content,
-            {
-              file_path: change.file_path,
-              type: 'before',
-              change_type: change.change_type,
-              session_id: this.sessionId
-            },
-            [this.sessionId, 'before']
-          );
-          memoryIds.push(response.id);
-          console.log(`   ✅ Uploaded before content, ID: ${response.id}`);
-        } catch (error) {
-          console.log(`   ❌ Failed to upload before content: ${error}`);
-        }
-      }
-
-      // Upload after content if it exists
-      if (change.after_content) {
-        console.log(`   📤 Uploading after content for ${change.file_path}`);
-        try {
-          const response = await this.supermemory.addMemory(
-            change.after_content,
-            {
-              file_path: change.file_path,
-              type: 'after',
-              change_type: change.change_type,
-              session_id: this.sessionId
-            },
-            [this.sessionId, 'after']
-          );
-          memoryIds.push(response.id);
-          console.log(`   ✅ Uploaded after content, ID: ${response.id}`);
-        } catch (error) {
-          console.log(`   ❌ Failed to upload after content: ${error}`);
-        }
-      }
-
-      // Upload diff content
-      if (change.diff_content) {
-        console.log(`   📤 Uploading diff content for ${change.file_path}`);
-        try {
-          const response = await this.supermemory.addMemory(
-            change.diff_content,
-            {
-              file_path: change.file_path,
-              type: 'diff',
-              change_type: change.change_type,
-              session_id: this.sessionId,
-              lines_added: change.total_lines_added,
-              lines_removed: change.total_lines_removed
-            },
-            [this.sessionId, 'diff']
-          );
-          memoryIds.push(response.id);
-          console.log(`   ✅ Uploaded diff content, ID: ${response.id}`);
-        } catch (error) {
-          console.log(`   ❌ Failed to upload diff content: ${error}`);
+    // Extract text content from all hunks
+    for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
+      const change = changes[changeIdx];
+      if (change.hunks) {
+        for (const hunk of change.hunks) {
+          textContents.push(hunk.context);
         }
       }
     }
 
-    return memoryIds;
+    // Get embeddings for all texts at once
+    const embeddings = await generateCodeEmbeddings(textContents);
+    let embeddingIndex = 0;
+
+    // Map embeddings back to hunks
+    for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
+      const change = changes[changeIdx];
+      if (change.hunks) {
+        for (const hunk of change.hunks) {
+          hunkData.push({
+            hunk,
+            embedding: embeddings[embeddingIndex++].embedding,
+            changeIndex: changeIdx
+          });
+        }
+      }
+    }
+
+    return hunkData;
   }
 
   /**
-   * Use Supermemory to analyze semantic relationships and group changes
+   * Analyze hunks using embeddings and clustering
    */
   private async analyzeSemanticRelationships(changes: FileChange[]): Promise<[CommitGroup[], string]> {
-    console.log('🔍 Analyzing semantic relationships between changes...');
+    console.log('🔍 Analyzing semantic relationships using embeddings...');
 
-    // Query Supermemory to understand feature relationships with summaries
-    const queries = [
-      'What changes implement the same feature?',
-      'What is the logical separation between these changes?',
-      'Group these file changes by functionality and purpose',
-      'Which changes are related to the same user-facing feature?'
-    ];
-
-    const allResults: any[] = [];
-    let semanticSummary = '';
-
-    for (const query of queries) {
-      try {
-        const results = await this.supermemory.searchMemories(
-          query,
-          20,
-          {
-            AND: [
-              {
-                key: 'session_id',
-                value: this.sessionId
-              }
-            ]
-          },
-          true
-        );
-        allResults.push(results);
-
-        // Extract summary if available
-        if (results.summary) {
-          semanticSummary += `Query: ${query}\nSummary: ${results.summary}\n\n`;
-        }
-      } catch (error) {
-        console.error('Error querying Supermemory:', error);
-        // Continue with heuristic grouping if search fails
-        console.log('⚠️ Search failed, continuing with heuristic grouping...');
-      }
-    }
-
-    // Analyze results to group files
-    // For now, use a simple heuristic-based grouping
-    // In a full implementation, you'd parse the semantic analysis results
-    const commitGroups = this.groupChangesHeuristic(changes, semanticSummary);
-
-    return [commitGroups as unknown as CommitGroup[], semanticSummary];
+    // Step 1: Vectorize all hunks
+    console.log('📊 Computing hunk embeddings...');
+    const hunkData = await this.vectorizeHunks(changes);
+    
+    // Step 2: Cluster based on similarity
+    console.log('🔗 Clustering based on similarity...');
+    const clusters = await this.clusterBySimilarity(hunkData);
+    
+    // Step 3: Generate commit groups from clusters
+    console.log('📋 Generating descriptive commits...');
+    const commitGroups = await this.generateCommitGroups(changes, clusters);
+    
+    // Step 4: Generate semantic summary
+    const semanticSummary = this.createClusterSummary(clusters);
+    
+    console.log(`📊 Created ${commitGroups.length} semantic groups from ${clusters.length} clusters`);
+    return [commitGroups, semanticSummary];
   }
+
 
   /**
    * Group changes using heuristic rules as fallback
@@ -506,9 +520,8 @@ export class IntelligentCommitSplitter {
       return [];
     }
 
-    // Step 2: Upload to Supermemory for semantic analysis
-    console.log('📤 Step 2: Uploading to Supermemory for semantic analysis...');
-    const memoryIds = await this.uploadToSupermemory(changes);
+    // Step 2: Vectorize hunks using embeddings 
+    console.log('📊 Step 2: Vectorizing hunks using embeddings...');
 
     try {
       // Step 3: Analyze semantic relationships
@@ -530,25 +543,165 @@ export class IntelligentCommitSplitter {
         console.log(`   Files: ${group.files.map(f => f.file_path)}`);
       }
 
-      // Step 5: Clean up memories after analysis and LLM generation
-      if (memoryIds.length) {
-        await this.supermemory.deleteMemoriesBatch(memoryIds);
-      }
+      // Step 5: Analysis complete
 
-      // Step 6: Execute if requested
-      if (autoPush) {
-        await this.executeCommitSplitting(commitGroups, autoPush);
-      }
+      // Step 6: Execute commit splitting
+      await this.executeCommitSplitting(commitGroups, autoPush);
 
       return commitGroups;
 
     } catch (error) {
       console.error(`❌ Error during analysis: ${error}`);
-      // Clean up memories even if analysis fails
-      if (memoryIds.length) {
-        await this.supermemory.deleteMemoriesBatch(memoryIds);
-      }
+      // Analysis failed
       throw error;
     }
   }
+
+  /**
+   * Cluster hunks by similarity using embeddings
+   */
+  private async clusterBySimilarity(hunkData: Array<{hunk: DiffHunk, embedding: number[], changeIndex: number}>): Promise<Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>> {
+    console.log(`🔗 Clustering ${hunkData.length} hunks using cosine similarity...`);
+    
+    const clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}> = [];
+    const processed = new Set<number>();
+    const similarityThreshold = 0.7; // Adjust based on testing
+    
+    for (let i = 0; i < hunkData.length; i++) {
+      if (processed.has(i)) continue;
+      
+      const cluster: Array<{hunk: DiffHunk, changeIndex: number}> = [
+        { hunk: hunkData[i].hunk, changeIndex: hunkData[i].changeIndex }
+      ];
+      const similarities: number[] = [];
+      
+      // Find similar hunks using cosine similarity
+      for (let j = i + 1; j < hunkData.length; j++) {
+        if (processed.has(j)) continue;
+        
+        const similarity = this.cosineSimilarity(hunkData[i].embedding, hunkData[j].embedding);
+        
+        if (similarity > similarityThreshold) {
+          cluster.push({ hunk: hunkData[j].hunk, changeIndex: hunkData[j].changeIndex });
+          similarities.push(similarity);
+          processed.add(j);
+        }
+      }
+      
+      processed.add(i);
+      
+      // Only create clusters with multiple hunks
+      if (cluster.length > 1) {
+        const avgSimilarity = similarities.length > 0 ? similarities.reduce((a, b) => a + b, 0) / similarities.length : 1.0;
+        clusters.push({ hunks: cluster, avgSimilarity });
+      }
+    }
+    
+    console.log(`📊 Found ${clusters.length} similarity clusters`);
+    return clusters;
+  }
+
+  /**
+   * Calculate cosine similarity between two vectors
+   */
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
+    
+    let dotProduct = 0;
+    let magnitudeA = 0;
+    let magnitudeB = 0;
+    
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      magnitudeA += a[i] * a[i];
+      magnitudeB += b[i] * b[i];
+    }
+    
+    magnitudeA = Math.sqrt(magnitudeA);
+    magnitudeB = Math.sqrt(magnitudeB);
+    
+    if (magnitudeA === 0 || magnitudeB === 0) return 0;
+    
+    return dotProduct / (magnitudeA * magnitudeB);
+  }
+
+  /**
+   * Generate commit groups from clustered hunks
+   */
+  private async generateCommitGroups(
+    changes: FileChange[],
+    clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>
+  ): Promise<CommitGroup[]> {
+    console.log(`📋 Generating commit groups from ${clusters.length} clusters...`);
+    
+    const commitGroups: CommitGroup[] = [];
+    const processedChanges = new Set<number>();
+    
+    // Process each cluster
+    for (let i = 0; i < clusters.length; i++) {
+      const cluster = clusters[i];
+      
+      // Group hunks by file for this cluster
+      const fileGroups = new Map<string, DiffHunk[]>();
+      const changeIndices = new Set<number>();
+      
+      for (const hunkInfo of cluster.hunks) {
+        const filePath = hunkInfo.hunk.filePath;
+        if (!fileGroups.has(filePath)) {
+          fileGroups.set(filePath, []);
+        }
+        fileGroups.get(filePath)!.push(hunkInfo.hunk);
+        changeIndices.add(hunkInfo.changeIndex);
+      }
+      
+      // Get the associated FileChange objects
+      const groupFiles = Array.from(changeIndices).map(idx => changes[idx]);
+      
+      // Generate commit message using LLM
+      const clusterContext = `Cluster ${i + 1}: ${cluster.hunks.length} related hunks with ${(cluster.avgSimilarity * 100).toFixed(1)}% similarity`;
+      const { title, message } = await this.cerebras.generateCommitMessage(groupFiles, `cluster_${i + 1}`, clusterContext);
+      // one second rate limit delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      commitGroups.push({
+        feature_name: `semantic_cluster_${i + 1}`,
+        description: clusterContext,
+        files: groupFiles,
+        commit_title: title,
+        commit_message: message
+      });
+      
+      // Mark changes as processed
+      changeIndices.forEach(idx => processedChanges.add(idx));
+    }
+    
+    // Handle remaining unprocessed changes
+    const remainingChanges = changes.filter((_, idx) => !processedChanges.has(idx));
+    if (remainingChanges.length > 0) {
+      console.log(`📝 Processing ${remainingChanges.length} unprocessed changes heuristically...`);
+      const heuristicGroups = await this.groupChangesHeuristic(remainingChanges);
+      commitGroups.push(...heuristicGroups);
+    }
+    
+    return commitGroups;
+  }
+
+  /**
+   * Create summary of clustering results
+   */
+  private createClusterSummary(
+    clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>
+  ): string {
+    const summary = ['Semantic Analysis Summary (Embedding-based):\n'];
+    
+    summary.push(`Found ${clusters.length} similarity clusters:`);
+    clusters.forEach((cluster, i) => {
+      summary.push(`  Cluster ${i + 1}: ${cluster.hunks.length} hunks (${(cluster.avgSimilarity * 100).toFixed(1)}% avg similarity)`);
+      const files = [...new Set(cluster.hunks.map(h => path.basename(h.hunk.filePath)))];
+      summary.push(`    Files: ${files.join(', ')}`);
+    });
+    
+    return summary.join('\n');
+  }
+
 }

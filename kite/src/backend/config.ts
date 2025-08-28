@@ -12,12 +12,14 @@ dotenv.config();
 export interface EnvironmentConfig {
   GITHUB_CLIENT_ID: string;
   CEREBRAS_API_KEY: string;
+  MORPH_API_KEY?: string;
   GITHUB_API_URL?: string;
 }
 
 export const config: EnvironmentConfig = {
   GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID || '',
   CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY || '',
+  MORPH_API_KEY: process.env.MORPH_API_KEY || '',
   GITHUB_API_URL: process.env.GITHUB_API_URL || 'https://api.github.com'
 };
 
@@ -37,4 +39,4 @@ export function validateConfig(): void {
 }
 
 // Export individual config values for convenience
-export const { GITHUB_CLIENT_ID, CEREBRAS_API_KEY, GITHUB_API_URL } = config;
+export const { GITHUB_CLIENT_ID, CEREBRAS_API_KEY, MORPH_API_KEY, GITHUB_API_URL } = config;

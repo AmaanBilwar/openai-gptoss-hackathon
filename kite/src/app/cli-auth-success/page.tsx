@@ -9,6 +9,7 @@ export default function CLIAuthSuccessPage() {
   const searchParams = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(10);
 
   useEffect(() => {
     const processCLIAuth = async () => {
@@ -60,6 +61,22 @@ export default function CLIAuthSuccessPage() {
 
     processCLIAuth();
   }, [isLoaded, isSignedIn, user]);
+
+  // Auto-close countdown effect
+  useEffect(() => {
+    if (!isProcessing && !error && countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    }
+
+    // Close window when countdown reaches 0
+    if (countdown === 0) {
+      window.close();
+    }
+  }, [isProcessing, error, countdown]);
 
   if (!isLoaded) {
     return (
@@ -134,6 +151,15 @@ export default function CLIAuthSuccessPage() {
           <br />
           This tab is safe to close now.
         </p>
+        <div className="text-sm text-blue-600">
+          This window will close automatically in {countdown} seconds...
+        </div>
+        <button
+          onClick={() => window.close()}
+          className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          Close Now
+        </button>
       </div>
     </main>
   );
