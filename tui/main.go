@@ -418,7 +418,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "/help", "?":
 				// Show help
 				renderedHelp := renderMarkdown(helpText)
-				m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedHelp)
+				m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedHelp)
 				styledContent := lipgloss.NewStyle().
 					Width(m.viewport.Width - 4).
 					Height(m.viewport.Height).
@@ -447,7 +447,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isStreaming = true
 				m.currentResponse = ""
 				// Add empty bot message that will be filled with streaming content
-				m.messages = append(m.messages, textStyle.Render("Bot: "))
+				m.messages = append(m.messages, textStyle.Render("Kite: "))
 
 				return m, m.makeAPIRequest()
 			} else {
@@ -462,7 +462,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stopSpinner()
 		// Render markdown for the bot response
 		renderedResponse := renderMarkdown(msg.response)
-		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedResponse)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedResponse)
 		styledContent := lipgloss.NewStyle().
 			Width(m.viewport.Width - 4).
 			Height(m.viewport.Height).
@@ -479,7 +479,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update the last message with the current streaming content (render markdown)
 		if len(m.messages) > 0 {
 			renderedResponse := renderMarkdownWithWidth(m.currentResponse, m.viewport.Width)
-			m.messages[len(m.messages)-1] = textStyle.Render("Bot: ") + renderedResponse
+			m.messages[len(m.messages)-1] = textStyle.Render("Kite: ") + renderedResponse
 			styledContent := lipgloss.NewStyle().
 				Width(m.viewport.Width - 4).
 				Height(m.viewport.Height).
@@ -516,7 +516,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update the last message with the full response (render markdown)
 		if len(m.messages) > 0 {
 			renderedResponse := renderMarkdownWithWidth(msg.response, m.viewport.Width)
-			m.messages[len(m.messages)-1] = textStyle.Render("Bot: ") + renderedResponse
+			m.messages[len(m.messages)-1] = textStyle.Render("Kite: ") + renderedResponse
 			styledContent := lipgloss.NewStyle().
 				Width(m.viewport.Width - 4).
 				Height(m.viewport.Height).
@@ -544,7 +544,7 @@ I'll open your browser to complete the authentication process.
 
 > This will allow you to access all Kite features including GitHub integration.`
 		renderedAuth := renderMarkdown(authMessage)
-		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedAuth)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedAuth)
 		styledContent := lipgloss.NewStyle().
 			Width(m.viewport.Width - 4).
 			Height(m.viewport.Height).
@@ -569,7 +569,7 @@ You can now continue using Kite with all features including:
 
 *Ready to help you with your Git workflow!*`
 		renderedSuccess := renderMarkdown(successMessage)
-		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedSuccess)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedSuccess)
 		styledContent := lipgloss.NewStyle().
 			Width(m.viewport.Width - 4).
 			Height(m.viewport.Height).
@@ -587,7 +587,7 @@ You can now continue using Kite with all features including:
 		m.errorChan = nil
 		// Render error message as markdown (in case it contains formatting)
 		renderedError := renderMarkdown("Error: " + msg.error)
-		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedError)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedError)
 		styledContent := lipgloss.NewStyle().
 			Width(m.viewport.Width - 4).
 			Height(m.viewport.Height).
