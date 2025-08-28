@@ -7,14 +7,7 @@ dotenv.config();
 async function testIntelligentCommitSplit() {
   console.log('🧪 Testing Intelligent Commit Split...');
   
-  const supermemoryApiKey = process.env.SUPERMEMORY_API_KEY;
   const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
-  
-  if (!supermemoryApiKey) {
-    console.error('❌ SUPERMEMORY_API_KEY environment variable not set');
-    console.log('💡 Please set the SUPERMEMORY_API_KEY environment variable to test intelligent commit splitting');
-    return;
-  }
   
   if (!cerebrasApiKey) {
     console.error('❌ CEREBRAS_API_KEY environment variable not set');
@@ -24,7 +17,7 @@ async function testIntelligentCommitSplit() {
   
   try {
     // Initialize the intelligent commit splitter
-    const splitter = new IntelligentCommitSplitter(supermemoryApiKey, cerebrasApiKey);
+    const splitter = new IntelligentCommitSplitter(cerebrasApiKey);
     
     console.log('🚀 Running intelligent commit splitting analysis...');
     
