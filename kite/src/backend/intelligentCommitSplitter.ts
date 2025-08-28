@@ -324,7 +324,6 @@ export class IntelligentCommitSplitter {
   }
 
 
-
   /**
    * Group changes using heuristic rules as fallback
    */
@@ -546,10 +545,8 @@ export class IntelligentCommitSplitter {
 
       // Step 5: Analysis complete
 
-      // Step 6: Execute if requested
-      if (autoPush) {
-        await this.executeCommitSplitting(commitGroups, autoPush);
-      }
+      // Step 6: Execute commit splitting
+      await this.executeCommitSplitting(commitGroups, autoPush);
 
       return commitGroups;
 
