@@ -2,25 +2,56 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { SupermemoryClient } from './supermemoryClient';
 import { CerebrasLLM } from './cerebrasLLM';
-import { FileChange, CommitGroup, DiffHunk, SemanticRelationship, CodeContext } from './types';
-import  parse  from "parse-diff";
+import { FileChange, CommitGroup, DiffHunk } from './types';
+import parse from "parse-diff";
+import { pipeline, env } from '@xenova/transformers';
 
 const execAsync = promisify(exec);
+
+// Initialize local embedding model
+let embeddingModel: any = null;
+const initializeEmbeddingModel = async () => {
+  if (!embeddingModel) {
+    console.log('🔄 Initializing local embedding model...');
+    embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    console.log('✅ Local embedding model ready');
+  }
+  return embeddingModel;
+};
+
+const generateCodeEmbeddings = async (
+  codeSnippets: string[]
+): Promise<Array<{ embedding: number[]; content: string }>> => {
+  try {
+    const model = await initializeEmbeddingModel();
+    
+    const embeddings = await Promise.all(
+      codeSnippets.map(async (snippet) => {
+        const result = await model(snippet, { pooling: 'mean', normalize: true });
+        return Array.from(result.data);
+      })
+    );
+
+    return embeddings.map((embedding, index) => ({
+      content: codeSnippets[index]!,
+      embedding: embedding as number[],
+    }));
+  } catch (error) {
+    console.warn('⚠️  Local embedding model failed, falling back to simple text clustering');
+    console.error('Embedding error:', error);
+    throw error;
+  }
+};
+
 
 /**
  * Main class for intelligent commit splitting
  */
 export class IntelligentCommitSplitter {
-  private supermemory: SupermemoryClient;
   private cerebras: CerebrasLLM;
-  private sessionId: string;
-
-  constructor(supermemoryApiKey: string, cerebrasApiKey: string) {
-    this.supermemory = new SupermemoryClient(supermemoryApiKey);
+  constructor(cerebrasApiKey: string) {
     this.cerebras = new CerebrasLLM(cerebrasApiKey);
-    this.sessionId = `commit_split_${process.pid}`;
   }
 
   /**
@@ -228,63 +259,68 @@ export class IntelligentCommitSplitter {
   }
 
   /**
-   * Upload before/after file contents to Supermemory for semantic analysis
+   * Vectorize hunks using lightweight embeddings
    */
-  private async uploadToSupermemory(changes: FileChange[]): Promise<string[]> {
-    console.log('📤 Uploading file contents to Supermemory for semantic analysis...');
+  private async vectorizeHunks(changes: FileChange[]): Promise<Array<{hunk: DiffHunk, embedding: number[], changeIndex: number}>> {
+    console.log('🔢 Vectorizing hunks using lightweight embeddings...');
 
-    const memoryIds: string[] = [];
+    const hunkData: Array<{hunk: DiffHunk, embedding: number[], changeIndex: number}> = [];
+    const textContents: string[] = [];
 
-    for (const change of changes) {
-      // Upload before content if it exists
+    // Extract text content from all hunks
+    for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
+      const change = changes[changeIdx];
       if (change.hunks) {
         for (const hunk of change.hunks) {
-          const memory = await this.supermemory.addMemory(hunk.context, {
-            file_path: hunk.filePath,
-            change_type: change.change_type,
-            old_start: hunk.oldStart,
-            old_lines: hunk.oldLines,
-            new_start: hunk.newStart,
-            new_lines: hunk.newLines,
-            header: hunk.header,
-            content: JSON.stringify(hunk.content),
-            context: hunk.context
-          });
-          memoryIds.push(memory.id);
+          textContents.push(hunk.context);
         }
       }
     }
 
-    return memoryIds;
+    // Get embeddings for all texts at once
+    const embeddings = await generateCodeEmbeddings(textContents);
+    let embeddingIndex = 0;
+
+    // Map embeddings back to hunks
+    for (let changeIdx = 0; changeIdx < changes.length; changeIdx++) {
+      const change = changes[changeIdx];
+      if (change.hunks) {
+        for (const hunk of change.hunks) {
+          hunkData.push({
+            hunk,
+            embedding: embeddings[embeddingIndex++].embedding,
+            changeIndex: changeIdx
+          });
+        }
+      }
+    }
+
+    return hunkData;
   }
 
   /**
-   * Use hybrid approach with embeddings and LLM-generated queries
+   * Analyze hunks using embeddings and clustering
    */
   private async analyzeSemanticRelationships(changes: FileChange[]): Promise<[CommitGroup[], string]> {
-    console.log('🔍 Analyzing semantic relationships using hybrid approach...');
+    console.log('🔍 Analyzing semantic relationships using embeddings...');
 
-    // Step 1: Generate embedding-based similarity clusters
-    console.log('📊 Computing hunk embeddings and similarity clusters...');
-    const embeddingClusters = await this.clusterByEmbeddings(changes);
+    // Step 1: Vectorize all hunks
+    console.log('📊 Computing hunk embeddings...');
+    const hunkData = await this.vectorizeHunks(changes);
     
-    // Step 2: Use LLM to generate smart queries for Supermemory
-    console.log('🤖 Generating targeted queries using LLM...');
-    const smartQueries = await this.generateLLMQueries(changes);
+    // Step 2: Cluster based on similarity
+    console.log('🔗 Clustering based on similarity...');
+    const clusters = await this.clusterBySimilarity(hunkData);
     
-    // Step 3: Find explicit relationships via Supermemory
-    console.log('🔍 Searching for explicit relationships...');
-    const explicitRelationships = await this.searchExplicitRelationships(smartQueries);
+    // Step 3: Generate commit groups from clusters
+    console.log('📋 Generating descriptive commits...');
+    const commitGroups = await this.generateCommitGroups(changes, clusters);
     
-    // Step 4: Combine embedding clusters with explicit relationships
-    console.log('🔗 Merging similarity and explicit relationships...');
-    const finalGroups = await this.mergeClustersAndRelationships(changes, embeddingClusters, explicitRelationships);
+    // Step 4: Generate semantic summary
+    const semanticSummary = this.createClusterSummary(clusters);
     
-    // Step 5: Generate semantic summary
-    const semanticSummary = this.createSemanticSummary(embeddingClusters, explicitRelationships);
-    
-    console.log(`📊 Created ${finalGroups.length} semantic groups from ${embeddingClusters.length} clusters and ${explicitRelationships.length} relationships`);
-    return [finalGroups, semanticSummary];
+    console.log(`📊 Created ${commitGroups.length} semantic groups from ${clusters.length} clusters`);
+    return [commitGroups, semanticSummary];
   }
 
 
@@ -485,9 +521,8 @@ export class IntelligentCommitSplitter {
       return [];
     }
 
-    // Step 2: Upload to Supermemory for semantic analysis
-    console.log('📤 Step 2: Uploading to Supermemory for semantic analysis...');
-    const memoryIds = await this.uploadToSupermemory(changes);
+    // Step 2: Vectorize hunks using embeddings 
+    console.log('📊 Step 2: Vectorizing hunks using embeddings...');
 
     try {
       // Step 3: Analyze semantic relationships
@@ -509,10 +544,7 @@ export class IntelligentCommitSplitter {
         console.log(`   Files: ${group.files.map(f => f.file_path)}`);
       }
 
-      // Step 5: Clean up memories after analysis and LLM generation
-      if (memoryIds.length) {
-        await this.supermemory.deleteMemoriesBatch(memoryIds);
-      }
+      // Step 5: Analysis complete
 
       // Step 6: Execute if requested
       if (autoPush) {
@@ -523,325 +555,156 @@ export class IntelligentCommitSplitter {
 
     } catch (error) {
       console.error(`❌ Error during analysis: ${error}`);
-      // Clean up memories even if analysis fails
-      if (memoryIds.length) {
-        await this.supermemory.deleteMemoriesBatch(memoryIds);
-      }
+      // Analysis failed
       throw error;
     }
   }
 
   /**
-   * Cluster hunks by embeddings using cosine similarity
+   * Cluster hunks by similarity using embeddings
    */
-  private async clusterByEmbeddings(changes: FileChange[]): Promise<Array<{files: string[]; similarity: number; evidence: string}>> {
-    // For now, use a simple text-based similarity as placeholder for embeddings
-    // In a real implementation, you'd use a code embedding model like CodeBERT
-    const clusters: Array<{files: string[]; similarity: number; evidence: string}> = [];
-    const processed = new Set<string>();
+  private async clusterBySimilarity(hunkData: Array<{hunk: DiffHunk, embedding: number[], changeIndex: number}>): Promise<Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>> {
+    console.log(`🔗 Clustering ${hunkData.length} hunks using cosine similarity...`);
     
-    for (let i = 0; i < changes.length; i++) {
-      if (processed.has(changes[i].file_path)) continue;
-      const cluster = [changes[i].file_path];
-      const baseContent = changes[i].hunks?.map(h => h.content.join('\n')).join('\n') || '';
+    const clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}> = [];
+    const processed = new Set<number>();
+    const similarityThreshold = 0.7; // Adjust based on testing
+    
+    for (let i = 0; i < hunkData.length; i++) {
+      if (processed.has(i)) continue;
       
-      // Find similar hunks (this is a simplified version - real implementation would use embeddings)
-      for (let j = i + 1; j < changes.length; j++) {
-        if (processed.has(changes[j].file_path)) continue;
+      const cluster: Array<{hunk: DiffHunk, changeIndex: number}> = [
+        { hunk: hunkData[i].hunk, changeIndex: hunkData[i].changeIndex }
+      ];
+      const similarities: number[] = [];
+      
+      // Find similar hunks using cosine similarity
+      for (let j = i + 1; j < hunkData.length; j++) {
+        if (processed.has(j)) continue;
         
-        const compareContent = changes[j].hunks?.map(h => h.content.join('\n')).join('\n');
-        const similarity = this.calculateTextSimilarity(baseContent, compareContent || '');
+        const similarity = this.cosineSimilarity(hunkData[i].embedding, hunkData[j].embedding);
         
-        if (similarity > 0.4) {
-          cluster.push(changes[j].file_path);
-          processed.add(changes[j].file_path);
+        if (similarity > similarityThreshold) {
+          cluster.push({ hunk: hunkData[j].hunk, changeIndex: hunkData[j].changeIndex });
+          similarities.push(similarity);
+          processed.add(j);
         }
       }
       
-      processed.add(changes[i].file_path);
+      processed.add(i);
       
+      // Only create clusters with multiple hunks
       if (cluster.length > 1) {
-        clusters.push({
-          files: cluster,
-          similarity: 0.6, // Would be actual cosine similarity from embeddings
-          evidence: `${cluster.length} files with similar code patterns`
-        });
+        const avgSimilarity = similarities.length > 0 ? similarities.reduce((a, b) => a + b, 0) / similarities.length : 1.0;
+        clusters.push({ hunks: cluster, avgSimilarity });
       }
     }
     
+    console.log(`📊 Found ${clusters.length} similarity clusters`);
     return clusters;
   }
 
   /**
-   * Use LLM to generate smart, targeted queries
+   * Calculate cosine similarity between two vectors
    */
-  private async generateLLMQueries(changes: FileChange[]): Promise<Array<{query: string; relevantFiles: string[]}>> {
-    // Batch hunks to optimize token usage
-    const hunkSummaries: string[] = [];
-    const fileMapping: string[] = [];
+  private cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
     
-    for (const change of changes) {
-      const summary = `File: ${change.file_path}\n` + 
-        change.hunks?.map((h, i) => 
-          `Hunk ${i + 1}: ${h.content.join('\n').substring(0, 200)}...`
-        ).join('\n');
-      hunkSummaries.push(summary);
-      fileMapping.push(change.file_path);
+    let dotProduct = 0;
+    let magnitudeA = 0;
+    let magnitudeB = 0;
+    
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      magnitudeA += a[i] * a[i];
+      magnitudeB += b[i] * b[i];
     }
     
-    // Use LLM to generate queries in batches
-    const queries: Array<{query: string; relevantFiles: string[]}> = [];
-    const batchSize = 5; // Process 5 files at a time to manage tokens
+    magnitudeA = Math.sqrt(magnitudeA);
+    magnitudeB = Math.sqrt(magnitudeB);
     
-    for (let i = 0; i < hunkSummaries.length; i += batchSize) {
-      const batch = hunkSummaries.slice(i, i + batchSize);
-      const batchFiles = fileMapping.slice(i, i + batchSize);
-      
-      const prompt = `Analyze these code changes and generate 2-3 specific search queries to find related code:
-
-${batch.join('\n---\n')}
-
-Generate queries that would help find:
-1. Functions/methods that these changes might be calling or modifying
-2. Code that imports or uses similar dependencies
-3. Tests or configuration that might be related
-
-Return queries as JSON array: [{"query": "search text", "files": ["file1.ts"]}]`;
-
-      try {
-        const response = await this.cerebras.generateText(prompt);
-        const parsedQueries = this.parseQueryResponse(response, batchFiles);
-        queries.push(...parsedQueries);
-      } catch (error) {
-        console.error('Error generating LLM queries:', error);
-        // Fallback to simple queries
-        queries.push({
-          query: `Find code related to ${batchFiles.map(f => path.basename(f)).join(', ')}`,
-          relevantFiles: batchFiles
-        });
-      }
-    }
+    if (magnitudeA === 0 || magnitudeB === 0) return 0;
     
-    return queries;
+    return dotProduct / (magnitudeA * magnitudeB);
   }
 
   /**
-   * Search for explicit relationships using generated queries
+   * Generate commit groups from clustered hunks
    */
-  private async searchExplicitRelationships(
-    queries: Array<{query: string; relevantFiles: string[]}>
-  ): Promise<SemanticRelationship[]> {
-    const relationships: SemanticRelationship[] = [];
-    
-    for (const queryGroup of queries) {
-      try {
-        const results = await this.supermemory.searchMemories(
-          queryGroup.query,
-          10,
-          { AND: [{ key: 'session_id', value: this.sessionId }] },
-          true
-        );
-        
-        if (results && results.memories && results.memories.length >= 2) {
-          // Extract file relationships from search results
-          const mentionedFiles = new Set<string>();
-          for (const memory of results.memories) {
-            for (const file of queryGroup.relevantFiles) {
-              if (memory.content?.includes(path.basename(file)) || memory.content?.includes(file)) {
-                mentionedFiles.add(file);
-              }
-            }
-          }
-          
-          // Create relationships between files found in results
-          const fileArray = Array.from(mentionedFiles);
-          for (let i = 0; i < fileArray.length; i++) {
-            for (let j = i + 1; j < fileArray.length; j++) {
-              relationships.push({
-                type: 'calls', // Inferred from query-based relationship
-                strength: Math.min(0.8, 0.4 + (results.memories.length * 0.05)),
-                evidence: [
-                  `Query: "${queryGroup.query}"`,
-                  `Found in ${results.memories.length} related memories`,
-                  results.summary ? `Context: ${results.summary.substring(0, 100)}...` : ''
-                ].filter(Boolean),
-                files: [fileArray[i], fileArray[j]]
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error searching explicit relationships:', error);
-      }
-    }
-    
-    return relationships;
-  }
-
-  /**
-   * Merge embedding clusters with explicit relationships
-   */
-  private async mergeClustersAndRelationships(
+  private async generateCommitGroups(
     changes: FileChange[],
-    embeddingClusters: Array<{files: string[]; similarity: number; evidence: string}>,
-    explicitRelationships: SemanticRelationship[]
+    clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>
   ): Promise<CommitGroup[]> {
-    const groups: CommitGroup[] = [];
-    const processedFiles = new Set<string>();
+    console.log(`📋 Generating commit groups from ${clusters.length} clusters...`);
     
-    // Start with embedding clusters as base groups
-    for (const cluster of embeddingClusters) {
-      const groupFiles = changes.filter(c => cluster.files.includes(c.file_path));
+    const commitGroups: CommitGroup[] = [];
+    const processedChanges = new Set<number>();
+    
+    // Process each cluster
+    for (let i = 0; i < clusters.length; i++) {
+      const cluster = clusters[i];
       
-      // Check if any explicit relationships strengthen this cluster
-      const supportingRelationships = explicitRelationships.filter(rel =>
-        cluster.files.includes(rel.files[0]) && cluster.files.includes(rel.files[1])
-      );
+      // Group hunks by file for this cluster
+      const fileGroups = new Map<string, DiffHunk[]>();
+      const changeIndices = new Set<number>();
       
-      const groupName = this.generateClusterName(groupFiles, supportingRelationships);
-      const evidence = [cluster.evidence];
-      if (supportingRelationships.length > 0) {
-        evidence.push(`${supportingRelationships.length} explicit relationships`);
+      for (const hunkInfo of cluster.hunks) {
+        const filePath = hunkInfo.hunk.filePath;
+        if (!fileGroups.has(filePath)) {
+          fileGroups.set(filePath, []);
+        }
+        fileGroups.get(filePath)!.push(hunkInfo.hunk);
+        changeIndices.add(hunkInfo.changeIndex);
       }
       
-      const { title, message } = await this.cerebras.generateCommitMessage(
-        groupFiles, 
-        groupName,
-        evidence.join('; ')
-      );
+      // Get the associated FileChange objects
+      const groupFiles = Array.from(changeIndices).map(idx => changes[idx]);
       
-      groups.push({
-        feature_name: groupName,
-        description: `Semantic cluster: ${evidence.join(', ')}`,
+      // Generate commit message using LLM
+      const clusterContext = `Cluster ${i + 1}: ${cluster.hunks.length} related hunks with ${(cluster.avgSimilarity * 100).toFixed(1)}% similarity`;
+      const { title, message } = await this.cerebras.generateCommitMessage(groupFiles, `cluster_${i + 1}`, clusterContext);
+      // one second rate limit delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      commitGroups.push({
+        feature_name: `semantic_cluster_${i + 1}`,
+        description: clusterContext,
         files: groupFiles,
         commit_title: title,
         commit_message: message
       });
       
-      cluster.files.forEach(f => processedFiles.add(f));
+      // Mark changes as processed
+      changeIndices.forEach(idx => processedChanges.add(idx));
     }
     
-    // Handle remaining files using explicit relationships
-    const remainingChanges = changes.filter(c => !processedFiles.has(c.file_path));
+    // Handle remaining unprocessed changes
+    const remainingChanges = changes.filter((_, idx) => !processedChanges.has(idx));
     if (remainingChanges.length > 0) {
-      console.log(`📝 Grouping ${remainingChanges.length} remaining files heuristically`);
+      console.log(`📝 Processing ${remainingChanges.length} unprocessed changes heuristically...`);
       const heuristicGroups = await this.groupChangesHeuristic(remainingChanges);
-      groups.push(...heuristicGroups);
+      commitGroups.push(...heuristicGroups);
     }
     
-    return groups;
+    return commitGroups;
   }
 
   /**
-   * Calculate simple text similarity (placeholder for embeddings)
+   * Create summary of clustering results
    */
-  private calculateTextSimilarity(text1: string, text2: string): number {
-    // Simple word overlap - in real implementation, use cosine similarity of embeddings
-    const words1 = new Set(text1.toLowerCase().match(/\w+/g) || []);
-    const words2 = new Set(text2.toLowerCase().match(/\w+/g) || []);
-    
-    const intersection = new Set([...words1].filter(w => words2.has(w)));
-    const union = new Set([...words1, ...words2]);
-    
-    return union.size > 0 ? intersection.size / union.size : 0;
-  }
-
-  /**
-   * Parse LLM query response 
-   */
-  private parseQueryResponse(response: string, fallbackFiles: string[]): Array<{query: string; relevantFiles: string[]}> {
-    try {
-      // Try to extract JSON from response
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.map((q: any) => ({
-          query: q.query || q.text || '',
-          relevantFiles: q.files || fallbackFiles
-        }));
-      }
-    } catch (error) {
-      console.error('Error parsing LLM query response:', error);
-    }
-    
-    // Fallback: extract queries from text
-    const lines = response.split('\n').filter(line => 
-      line.includes('query') || line.includes('search') || line.includes('find')
-    );
-    
-    return lines.slice(0, 3).map(line => ({
-      query: line.replace(/^\d+\.?\s*/, '').trim(),
-      relevantFiles: fallbackFiles
-    }));
-  }
-
-  /**
-   * Generate cluster name based on files and relationships
-   */
-  private generateClusterName(files: FileChange[], relationships: SemanticRelationship[]): string {
-    const paths = files.map(f => f.file_path);
-    
-    // Check relationship types
-    const relationshipTypes = relationships.map(r => r.type);
-    if (relationshipTypes.includes('calls')) return 'function_updates';
-    if (relationshipTypes.includes('imports')) return 'dependency_changes';
-    if (relationshipTypes.includes('tests')) return 'test_updates';
-    
-    // Check file patterns
-    if (paths.some(p => p.includes('test'))) return 'testing';
-    if (paths.some(p => p.includes('config'))) return 'configuration';
-    if (paths.some(p => p.includes('component') || p.includes('.tsx'))) return 'ui_components';
-    if (paths.some(p => p.includes('api'))) return 'api_changes';
-    
-    // Fallback to directory
-    return this.findCommonDirectory(paths) || 'related_changes';
-  }
-
-  /**
-   * Create semantic summary for LLM context
-   */
-  private createSemanticSummary(
-    clusters: Array<{files: string[]; similarity: number; evidence: string}>,
-    relationships: SemanticRelationship[]
+  private createClusterSummary(
+    clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>
   ): string {
-    const summary = ['Semantic Analysis Summary:\n'];
+    const summary = ['Semantic Analysis Summary (Embedding-based):\n'];
     
     summary.push(`Found ${clusters.length} similarity clusters:`);
     clusters.forEach((cluster, i) => {
-      summary.push(`  Cluster ${i + 1}: ${cluster.files.length} files (${(cluster.similarity * 100).toFixed(0)}% similar)`);
-      summary.push(`    Files: ${cluster.files.map(f => path.basename(f)).join(', ')}`);
+      summary.push(`  Cluster ${i + 1}: ${cluster.hunks.length} hunks (${(cluster.avgSimilarity * 100).toFixed(1)}% avg similarity)`);
+      const files = [...new Set(cluster.hunks.map(h => path.basename(h.hunk.filePath)))];
+      summary.push(`    Files: ${files.join(', ')}`);
     });
-    
-    if (relationships.length > 0) {
-      summary.push(`\nFound ${relationships.length} explicit relationships:`);
-      const typeGroups = new Map<string, number>();
-      relationships.forEach(r => typeGroups.set(r.type, (typeGroups.get(r.type) || 0) + 1));
-      
-      for (const [type, count] of typeGroups) {
-        summary.push(`  ${type}: ${count} relationships`);
-      }
-    }
     
     return summary.join('\n');
   }
 
-  /**
-   * Find common directory among file paths
-   */
-  private findCommonDirectory(paths: string[]): string {
-    if (paths.length === 0) return 'misc';
-    if (paths.length === 1) return path.dirname(paths[0]).split('/').pop() || 'misc';
-    
-    const dirs = paths.map(p => path.dirname(p).split('/'));
-    const minLength = Math.min(...dirs.map(d => d.length));
-    
-    for (let i = 0; i < minLength; i++) {
-      const commonDir = dirs[0][i];
-      if (!dirs.every(d => d[i] === commonDir)) {
-        return dirs[0][i - 1] || 'misc';
-      }
-    }
-    
-    return dirs[0][minLength - 1] || 'misc';
-  }
 }
