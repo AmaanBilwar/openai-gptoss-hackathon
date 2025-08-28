@@ -4,25 +4,25 @@
     1. mail0
     2. claudecode?
     3. codex - OpenAI
-- core logic
+- ~~core logic~~
 
-    - convert github api into functions 
-        - get: 
-            1. get commit
-            2. get file contents 
-            3. get tag
-            4. list branches
-            5. list commits
-            6. list tags 
-            7. search code
-            8. search repositories
-            9. search users
-            10. context : get my user profile.?
+    - ~~convert github api into functions~~ 
+        - ~~get:~~ 
+            1. ~~get commit~~
+            2. ~~get file contents~~ 
+            3. ~~get tag~~
+            4. ~~list branches~~
+            5. ~~list commits~~
+            6. ~~list tags~~ 
+            7. ~~search code~~
+            8. ~~search repositories~~
+            9. ~~search users~~
+            10. ~~context : get my user profile.?~~
 
-    - develop compositional / sequential tool calling logic 
+    - ~~develop compositional / sequential tool calling logic~~ 
         
 
-    - basic LLM calling functions according based on prompts
+    - ~~basic LLM calling functions according based on prompts~~
 
 
 - web dashboard
@@ -34,11 +34,11 @@
 
 ## priority:
 - Go fucking Crazy on X!
-- push
-- new branch 
-- merge
-- make pr
-- rebase?
+- ~~push~~
+- ~~new branch~~ 
+- ~~merge~~
+- ~~make pr~~
+- ~~rebase?~~
 
 
 ## task distribution 
@@ -46,26 +46,24 @@
 - CLI design: [add your name here]
 
 - main logic
-    - convert github api into tools : Vishesh + Amaan
-        - [x] merge pr (amaan)
-        - [x] create pr (amaan)
-        - [x] list repo issues (amaan)
-        - [x] create issue (amaan)
-        - [x] get issue (amaan)
-        - [x] update issue (amaan)
-        - [x] lock issue (amaan)
-        - [x] unlock issue (amaan)
+    - ~~convert github api into tools : Vishesh + Amaan~~
+        - [x] ~~merge pr (amaan)~~
+        - [x] ~~create pr (amaan)~~
+        - [x] ~~list repo issues (amaan)~~
+        - [x] ~~create issue (amaan)~~
+        - [x] ~~get issue (amaan)~~
+        - [x] ~~update issue (amaan)~~
+        - [x] ~~lock issue (amaan)~~
+        - [x] ~~unlock issue (amaan)~~
 
-        - [ ] rebase (amaan)
+        - [x] ~~new branch (vishesh)~~  
+        - [x] ~~make branch (vishesh)~~
+        - [x] ~~switch branches (vishesh)~~
+        - [x] ~~push (amaan + vishesh)~~
 
-        - [x] new branch (vishesh)  
-        - [x] make branch (vishesh)
-        - [x] switch branches (vishesh)
-        - [ ] push (amaan + vishesh)
-
-    - tool calling logic : Amaan
+    - [x] ~~tool calling logic : Amaan~~
     
-    - LLM chat + system prompt : Ani
+    - [x] ~~LLM chat + system prompt : Ani~~
 
 - web dashboard : [add your name here]
     - auth + db connection (for web dashboard settings) - Ani
