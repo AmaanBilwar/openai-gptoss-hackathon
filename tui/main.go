@@ -184,9 +184,6 @@ func initialModel() model {
 	vp := viewport.New(30, 5)
 	welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
 
-Type a message and press **Enter** to send.
-
-
 *Ready to help you with your Git workflow!*`
 	renderedWelcome := renderMarkdown(welcomeMessage)
 	vp.SetContent(renderedWelcome)
@@ -282,6 +279,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			message := m.textarea.Value()
 			if message == "" {
 				return m, nil
+			}
+
+			// Handle special commands
+			switch strings.ToLower(strings.TrimSpace(message)) {
+			case "/clear":
+				// Clear chat history and messages
+				m.messages = []string{}
+				m.chatHistory = []CerebrasMessage{}
+				m.currentResponse = ""
+
+				// Show welcome message again
+				welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
+
+*Ready to help you with your Git workflow!*`
+				renderedWelcome := renderMarkdown(welcomeMessage)
+				m.viewport.SetContent(renderedWelcome)
+				m.textarea.Reset()
+				m.viewport.GotoBottom()
+				return m, nil
+
+			case "exit", "quit":
+				// Quit the application
+				return m, tea.Quit
 			}
 
 			m.messages = append(m.messages, m.senderStyle.Render("You: ")+message)

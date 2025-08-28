@@ -519,7 +519,7 @@ PULL REQUEST WORKFLOW:
 		choice := response.Choices[0]
 
 		// Check if there are tool calls
-		if choice.Message.ToolCalls != nil && len(choice.Message.ToolCalls) > 0 {
+		if len(choice.Message.ToolCalls) > 0 {
 			if c.backend == nil {
 				errorChan <- fmt.Errorf("backend client not available for tool execution")
 				return
