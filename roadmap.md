@@ -6,7 +6,7 @@
 - [x] add fallback responses in the system prompt
 - [x] auth with clerk - Ani
 - [x] compositional / sequential tool calling - Amaan
-- [x] TUI - Amaan
+- [x] TUI - Amaan --- basic 
 - [x] all functions related to issues - Amaan
 - [x] merge conflicts - Ani
 - [x] add auth to cli (ts backend) - Amaan
@@ -15,6 +15,9 @@
 ## need immediate attention
 
 - [ ] rag commit feature - Vishesh
+
+- [ ] lfs 
+
 
 - [ ] web dashboard
     - [ ] sidebar
