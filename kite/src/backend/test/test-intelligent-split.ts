@@ -11,7 +11,6 @@ async function testIntelligentCommitSplit() {
   
   if (!cerebrasApiKey) {
     console.error('❌ CEREBRAS_API_KEY environment variable not set');
-    console.log('💡 Please set the CEREBRAS_API_KEY environment variable to test intelligent commit splitting');
     return;
   }
   
