@@ -1358,16 +1358,7 @@ Instructions:
    */
   private async executeIntelligentCommitSplit(parameters: Record<string, any>): Promise<ToolResult> {
     try {
-      const supermemoryApiKey = process.env.SUPERMEMORY_API_KEY;
       const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
-      
-      if (!supermemoryApiKey) {
-        return {
-          success: false,
-          error: 'SUPERMEMORY_API_KEY environment variable not set',
-          suggestion: 'Please set the SUPERMEMORY_API_KEY environment variable to use intelligent commit splitting'
-        };
-      }
       
       if (!cerebrasApiKey) {
         return {
@@ -1377,8 +1368,8 @@ Instructions:
         };
       }
       
-      // Initialize the intelligent commit splitter
-      const splitter = new IntelligentCommitSplitter(supermemoryApiKey, cerebrasApiKey);
+      // Initialize the intelligent commit splitter with only cerebrasApiKey
+      const splitter = new IntelligentCommitSplitter(cerebrasApiKey);
       
       const autoPush = parameters.auto_push || false;
       const dryRun = parameters.dry_run || false;
