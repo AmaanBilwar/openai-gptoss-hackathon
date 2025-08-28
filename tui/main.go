@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -21,6 +23,96 @@ const gap = "\n\n"
 var spinners = []spinner.Spinner{
 	spinner.Points,
 }
+
+// keyMap defines a set of keybindings for the help system
+type keyMap struct {
+	Up    key.Binding
+	Down  key.Binding
+	Quit  key.Binding
+	Clear key.Binding
+}
+
+// ShortHelp returns keybindings to be shown in the mini help view
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Quit}
+}
+
+// FullHelp returns keybindings for the expanded help view
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down}, // first column
+		{k.Quit},       // second column
+		{k.Clear},      // third column
+	}
+}
+
+var keys = keyMap{
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "scroll up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "scroll down"),
+	),
+	Quit: key.NewBinding(
+		key.WithKeys("q", "esc", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	),
+	Clear: key.NewBinding(
+		key.WithKeys("ctrl+l"),
+		key.WithHelp("ctrl+l", "clear chat"),
+	),
+}
+
+// helpText provides comprehensive help information
+var helpText = `# Kite - Your Personal Git Assistant
+
+## Quick Commands
+- **?** or **/help** - Show this help
+- **/clear** - Clear chat history
+- **Ctrl+L** - Clear chat (keyboard shortcut)
+- **exit** or **quit** - Exit the application
+
+## Navigation
+- **↑/k** - Scroll up in chat
+- **↓/j** - Scroll down in chat
+- **Enter** - Send message
+- **Esc** or **Ctrl+C** - Quit application
+
+## What I Can Do
+I'm an expert GitHub repository management assistant. I can help you with:
+
+### Git Operations
+- Commit and push changes
+- Create and switch branches
+- Resolve merge conflicts
+- Intelligent commit splitting
+
+### GitHub Management
+- Create pull requests
+- Manage issues
+- List repositories
+- Check repository status
+
+### Smart Features
+- Automatic conflict detection
+- Intelligent commit message generation
+- Workflow optimization
+- Team pattern learning
+
+## Getting Started
+1. **Authentication**: I'll help you authenticate with GitHub
+2. **Ask Questions**: Just type your Git-related questions
+3. **Use Commands**: Try "commit and push" or "create a PR"
+
+## Examples
+- "Commit and push my changes"
+- "Create a new branch called feature-x"
+- "Show me the open pull requests"
+- "Help me resolve this merge conflict"
+
+*Type ? anytime to see this help again!*`
 
 // Glamour markdown renderer for CLI responses
 func renderMarkdown(content string) string {
@@ -75,7 +167,7 @@ func renderMarkdownWithWidth(content string, width int) string {
 var (
 	textStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
-	// helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
 func main() {
@@ -163,6 +255,9 @@ type model struct {
 	isStreaming     bool
 	responseChan    <-chan string
 	errorChan       <-chan error
+	keys            keyMap
+	help            help.Model
+	showHelp        bool
 }
 
 func initialModel() model {
@@ -222,6 +317,9 @@ func initialModel() model {
 		isStreaming:     false,
 		responseChan:    nil,
 		errorChan:       nil,
+		keys:            keys,
+		help:            help.New(),
+		showHelp:        false,
 	}
 }
 
@@ -239,20 +337,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		tiCmd tea.Cmd
 		vpCmd tea.Cmd
 		spCmd tea.Cmd
+		hpCmd tea.Cmd
 	)
 
 	m.textarea, tiCmd = m.textarea.Update(msg)
 	m.viewport, vpCmd = m.viewport.Update(msg)
 	m.spinner, spCmd = m.spinner.Update(msg)
+	m.help, hpCmd = m.help.Update(msg)
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.viewport.Width = msg.Width
 		m.textarea.SetWidth(msg.Width)
+		m.help.Width = msg.Width
 		// Calculate viewport height with proper spacing
 		textareaHeight := m.textarea.Height()
 		gapHeight := lipgloss.Height(gap)
-		m.viewport.Height = msg.Height - textareaHeight - gapHeight - 2 // Extra margin
+		m.viewport.Height = msg.Height - textareaHeight - gapHeight - 4 // Extra margin for help text
 
 		if len(m.messages) > 0 {
 			// Join messages and render markdown for the entire content
@@ -270,6 +371,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			fmt.Println(m.textarea.Value())
 			return m, tea.Quit
+		case tea.KeyRunes:
+		case tea.KeyCtrlL:
+			// Clear chat history and messages
+			m.messages = []string{}
+			m.chatHistory = []CerebrasMessage{}
+			m.currentResponse = ""
+
+			// Show welcome message again
+			welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
+
+*Ready to help you with your Git workflow!*`
+			renderedWelcome := renderMarkdown(welcomeMessage)
+			m.viewport.SetContent(renderedWelcome)
+			m.viewport.GotoBottom()
+			return m, nil
 		case tea.KeyEnter:
 			if m.isStreaming {
 				// Don't allow new messages while streaming
@@ -295,6 +411,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 *Ready to help you with your Git workflow!*`
 				renderedWelcome := renderMarkdown(welcomeMessage)
 				m.viewport.SetContent(renderedWelcome)
+				m.textarea.Reset()
+				m.viewport.GotoBottom()
+				return m, nil
+
+			case "/help", "?":
+				// Show help
+				renderedHelp := renderMarkdown(helpText)
+				m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedHelp)
+				styledContent := lipgloss.NewStyle().
+					Width(m.viewport.Width - 4).
+					Height(m.viewport.Height).
+					Render(strings.Join(m.messages, "\n"))
+				m.viewport.SetContent(styledContent)
 				m.textarea.Reset()
 				m.viewport.GotoBottom()
 				return m, nil
@@ -474,7 +603,7 @@ You can now continue using Kite with all features including:
 		return m, nil
 	}
 
-	return m, tea.Batch(tiCmd, vpCmd, spCmd)
+	return m, tea.Batch(tiCmd, vpCmd, spCmd, hpCmd)
 }
 
 func (m *model) makeAPIRequest() tea.Cmd {
@@ -614,16 +743,26 @@ func (m model) View() string {
 		content += spinnerContent
 	}
 
+	// Add help view if showing help
+	if m.showHelp {
+		helpView := m.help.View(m.keys)
+		content += "\n" + helpStyle.Render("--- Help Mode ---\n"+helpView)
+	}
+
+	// Add muted help text at the bottom
+	mutedHelp := helpStyle.Render("Type /help for detailed help • Ctrl+L to clear chat • Esc to quit")
+
 	// Ensure proper spacing and prevent overlapping
 	return lipgloss.NewStyle().
 		Margin(0, 1).
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("240")).
 		Render(fmt.Sprintf(
-			"%s%s%s",
+			"%s%s%s\n%s",
 			content,
 			gap,
 			m.textarea.View(),
+			mutedHelp,
 		))
 }
 
