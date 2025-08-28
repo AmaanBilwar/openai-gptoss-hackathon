@@ -79,10 +79,7 @@ MESSAGE: <explanation of WHAT changed, WHY it matters, and the USER IMPACT. Avoi
 Conventional commit types: feat, fix, docs, style, refactor, test, chore, perf, ci, build.
 Guidelines:
 - Use a meaningful, descriptive title (not generic like "update" or "misc").
-- Highlight the business or user value in the message.
 - Keep the title concise and scoped, message clear and actionable.
-- Write in present tense, imperative mood.
-- Avoid unnecessary technical jargon unless essential.
 
 Example:
 TITLE: feat: add GitHub OAuth login  
@@ -102,12 +99,15 @@ MESSAGE: Introduced GitHub OAuth login so users can sign in without creating a n
           }
         ],
         model: 'gpt-oss-120b',
-        max_tokens: 200,
-        temperature: 0.7
+        max_tokens: 500,
+        temperature: 0.3
       });
       
       // Simple parsing - just split on TITLE: and MESSAGE:
-      const content = (response.choices as any[])[0].message.content?.trim() || '';
+      const content = (response.choices as any[])[0].message.content?.trim();
+      if (!content) {
+        throw new Error('No response from LLM');
+      }
       
       // Extract title and message
       let title = '';
