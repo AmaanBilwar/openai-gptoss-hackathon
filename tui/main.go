@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -21,90 +22,54 @@ var spinners = []spinner.Spinner{
 	spinner.Points,
 }
 
-// Simple markdown renderer for CLI responses
+// Glamour markdown renderer for CLI responses
 func renderMarkdown(content string) string {
 	if content == "" {
 		return content
 	}
 
-	// Simple markdown parsing for common elements
-	lines := strings.Split(content, "\n")
-	var result []string
-
-	for _, line := range lines {
-		// Handle headers
-		if strings.HasPrefix(line, "# ") {
-			title := strings.TrimPrefix(line, "# ")
-			result = append(result, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("69")).Render(title))
-		} else if strings.HasPrefix(line, "## ") {
-			title := strings.TrimPrefix(line, "## ")
-			result = append(result, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252")).Render(title))
-		} else if strings.HasPrefix(line, "### ") {
-			title := strings.TrimPrefix(line, "### ")
-			result = append(result, lipgloss.NewStyle().Bold(true).Render(title))
-		} else if strings.HasPrefix(line, "**") && strings.HasSuffix(line, "**") {
-			// Bold text
-			boldText := strings.TrimPrefix(strings.TrimSuffix(line, "**"), "**")
-			result = append(result, lipgloss.NewStyle().Bold(true).Render(boldText))
-		} else if strings.HasPrefix(line, "* ") {
-			// Bullet points
-			bullet := strings.TrimPrefix(line, "* ")
-			result = append(result, "• "+bullet)
-		} else if strings.HasPrefix(line, "- ") {
-			// Bullet points
-			bullet := strings.TrimPrefix(line, "- ")
-			result = append(result, "• "+bullet)
-		} else if strings.Contains(line, "🔐") || strings.Contains(line, "✅") || strings.Contains(line, "⏳") {
-			// Emoji lines - keep as is
-			result = append(result, line)
-		} else {
-			// Regular text
-			result = append(result, line)
-		}
+	// Create a custom renderer with dark theme and proper width handling
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(80),
+	)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
 	}
 
-	return strings.Join(result, "\n")
+	out, err := r.Render(content)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
+	}
+
+	return out
 }
 
 // renderMarkdownWithWidth renders markdown content with a specific width
 func renderMarkdownWithWidth(content string, width int) string {
-	// For now, use the same renderer but with word wrapping
-	rendered := renderMarkdown(content)
-
-	// Simple word wrapping
-	lines := strings.Split(rendered, "\n")
-	var wrappedLines []string
-
-	for _, line := range lines {
-		if len(line) <= width {
-			wrappedLines = append(wrappedLines, line)
-		} else {
-			// Simple word wrap
-			words := strings.Fields(line)
-			currentLine := ""
-
-			for _, word := range words {
-				if len(currentLine)+len(word)+1 <= width {
-					if currentLine != "" {
-						currentLine += " " + word
-					} else {
-						currentLine = word
-					}
-				} else {
-					if currentLine != "" {
-						wrappedLines = append(wrappedLines, currentLine)
-					}
-					currentLine = word
-				}
-			}
-
-			if currentLine != "" {
-				wrappedLines = append(wrappedLines, currentLine)
-			}
-		}
+	if content == "" {
+		return content
 	}
 
-	return strings.Join(wrappedLines, "\n")
+	// Create a custom renderer with specified width
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
+	}
+
+	out, err := r.Render(content)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
+	}
+
+	return out
 }
 
 var (
@@ -219,7 +184,10 @@ func initialModel() model {
 	vp := viewport.New(30, 5)
 	welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
 
-Type a message and press **Enter** to send.`
+Type a message and press **Enter** to send.
+
+
+*Ready to help you with your Git workflow!*`
 	renderedWelcome := renderMarkdown(welcomeMessage)
 	vp.SetContent(renderedWelcome)
 	vp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
@@ -419,7 +387,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errorChan = nil
 
 		// Show authentication message
-		authMessage := "🔐 **You are not authenticated.** Let's authenticate you first!\n\nI'll open your browser to complete the authentication process."
+		authMessage := `# 🔐 Authentication Required
+
+**You are not authenticated.** Let's authenticate you first!
+
+I'll open your browser to complete the authentication process.
+
+> This will allow you to access all Kite features including GitHub integration.`
 		renderedAuth := renderMarkdown(authMessage)
 		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedAuth)
 		styledContent := lipgloss.NewStyle().
@@ -434,7 +408,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case authCompleteMsg:
 		// Authentication completed, show success message
-		successMessage := "✅ **Authentication completed successfully!**\n\nYou can now continue using Kite with all features."
+		successMessage := `# ✅ Authentication Complete!
+
+**Authentication completed successfully!**
+
+You can now continue using Kite with all features including:
+
+- 🔗 GitHub repository access
+- 🛠️ Tool calling capabilities
+- 📊 Repository analytics
+
+*Ready to help you with your Git workflow!*`
 		renderedSuccess := renderMarkdown(successMessage)
 		m.messages = append(m.messages, textStyle.Render("Bot: ")+renderedSuccess)
 		styledContent := lipgloss.NewStyle().
