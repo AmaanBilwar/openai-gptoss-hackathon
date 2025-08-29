@@ -396,7 +396,7 @@ export class IntelligentCommitSplitter {
   }
 
   /**
-   * Apply hunks to create a patch and stage it
+   * Apply hunks to create a patch and stage it using git add --patch
    */
   private async applyHunks(hunks: DiffHunk[]): Promise<void> {
     // Group hunks by file
