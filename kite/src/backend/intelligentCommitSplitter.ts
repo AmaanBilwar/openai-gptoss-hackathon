@@ -101,45 +101,81 @@ export class IntelligentCommitSplitter {
    * Get git diff hunks from the files, and group diff by hunks
    */
   async getGitDiffHunks(filePath: string): Promise<DiffHunk[]> {
-    const { stdout: stdoutStaged } = await execAsync(`git diff --cached --unified=3 ${filePath}`);
-    const { stdout: stdoutUnstaged } = await execAsync(`git diff --unified=3 ${filePath}`);
-    const diffStaged = parse(stdoutStaged);
-    const diffUnstaged = parse(stdoutUnstaged);
-    const hunks: DiffHunk[] = [];
-
-    for (const file of diffStaged) {
-      for (const hunk of file.chunks) {
-        hunks.push({
-          filePath: file.to || file.from || '',
-          oldStart: hunk.oldStart,
-          oldLines: hunk.oldLines,
-          newStart: hunk.newStart,
-          newLines: hunk.newLines,
-          changeType: 'staged',
-          header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
-          content: hunk.changes.map(change => change.content),
-          context: hunk.changes.map(change => change.content).join('\n')
-        });
+    try {
+      const changeType = await this.determineChangeType(filePath);
+      let stdoutStaged = '';
+      let stdoutUnstaged = '';
+      
+      // Handle deleted files
+      if (changeType === 'deleted') {
+        try {
+          const { stdout } = await execAsync(`git diff --cached HEAD -- "${filePath}"`);
+          stdoutStaged = stdout;
+        } catch {
+          // File might not be staged for deletion yet
+        }
+        try {
+          const { stdout } = await execAsync(`git diff HEAD -- "${filePath}"`);
+          stdoutUnstaged = stdout;
+        } catch {
+          // File might already be staged
+        }
+      } else {
+        try {
+          const { stdout } = await execAsync(`git diff --cached --unified=3 -- "${filePath}"`);
+          stdoutStaged = stdout;
+        } catch {
+          // No staged changes
+        }
+        try {
+          const { stdout } = await execAsync(`git diff --unified=3 -- "${filePath}"`);
+          stdoutUnstaged = stdout;
+        } catch {
+          // No unstaged changes
+        }
       }
-    }
+      
+      const diffStaged = parse(stdoutStaged);
+      const diffUnstaged = parse(stdoutUnstaged);
+      const hunks: DiffHunk[] = [];
 
-    for (const file of diffUnstaged) {
-      for (const hunk of file.chunks) {
-        hunks.push({
-          filePath: file.to || file.from || '',
-          oldStart: hunk.oldStart,
-          oldLines: hunk.oldLines,
-          newStart: hunk.newStart,
-          newLines: hunk.newLines,
-          changeType: 'unstaged',
-          header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
-          content: hunk.changes.map(change => change.content),
-          context: hunk.changes.map(change => change.content).join('\n')
-        });
+      for (const file of diffStaged) {
+        for (const hunk of file.chunks) {
+          hunks.push({
+            filePath: file.to || file.from || '',
+            oldStart: hunk.oldStart,
+            oldLines: hunk.oldLines,
+            newStart: hunk.newStart,
+            newLines: hunk.newLines,
+            changeType: 'staged',
+            header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+            content: hunk.changes.map(change => change.content),
+            context: hunk.changes.map(change => change.content).join('\n')
+          });
+        }
       }
-    }
 
-    return hunks;
+      for (const file of diffUnstaged) {
+        for (const hunk of file.chunks) {
+          hunks.push({
+            filePath: file.to || file.from || '',
+            oldStart: hunk.oldStart,
+            oldLines: hunk.oldLines,
+            newStart: hunk.newStart,
+            newLines: hunk.newLines,
+            changeType: 'unstaged',
+            header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+            content: hunk.changes.map(change => change.content),
+            context: hunk.changes.map(change => change.content).join('\n')
+          });
+        }
+      }
+
+      return hunks;
+    } catch (error) {
+      console.error(`Error getting hunks for ${filePath}:`, error);
+      return [];
+    }
   }
 
   /**
@@ -172,7 +208,14 @@ export class IntelligentCommitSplitter {
    */
   private async getFileDiff(filePath: string): Promise<string> {
     try {
-      const { stdout } = await execAsync(`git diff --unified=3 ${filePath}`);
+      // For deleted files, get diff from HEAD
+      const changeType = await this.determineChangeType(filePath);
+      if (changeType === 'deleted') {
+        const { stdout } = await execAsync(`git diff HEAD -- "${filePath}"`);
+        return stdout || '';
+      }
+      
+      const { stdout } = await execAsync(`git diff --unified=3 -- "${filePath}"`);
       return stdout || '';
     } catch (error) {
       console.error(`Error getting diff for ${filePath}:`, error);
@@ -185,17 +228,17 @@ export class IntelligentCommitSplitter {
    */
   private async determineChangeType(filePath: string): Promise<'added' | 'modified' | 'deleted'> {
     try {
-      // Check if file exists in working directory using git ls-files
-      const { stdout } = await execAsync(`git ls-files ${filePath}`);
-      const fileExistsInGit = stdout.trim() !== '';
-
+      // Check if file exists in working directory
+      const fileExistsInWorkdir = require('fs').existsSync(filePath);
+      
       // Check if file exists in HEAD
       const headContent = await this.getFileContent(filePath, 'HEAD');
+      const fileExistsInHead = headContent !== null;
 
-      if (!fileExistsInGit && headContent === null) {
-        return 'added';
-      } else if (fileExistsInGit && headContent === null) {
+      if (!fileExistsInWorkdir && fileExistsInHead) {
         return 'deleted';
+      } else if (fileExistsInWorkdir && !fileExistsInHead) {
+        return 'added';
       } else {
         return 'modified';
       }
