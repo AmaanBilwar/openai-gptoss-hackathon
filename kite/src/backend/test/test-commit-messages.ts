@@ -1,4 +1,4 @@
-// TODO: Add tests for commit messages
+
 
 import { describe, it, expect } from 'vitest';
 
