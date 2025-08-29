@@ -1,7 +1,7 @@
-import { ToolCaller } from '../toolCalling';
+import { GPTOSSToolCaller } from '../toolCalling';
 
 async function testBranchCommit() {
-  const toolCaller = new ToolCaller();
+  const toolCaller = new GPTOSSToolCaller();
   
   console.log('Testing commit_and_push with branch creation...');
   

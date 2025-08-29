@@ -1,6 +1,8 @@
 import Cerebras from '@cerebras/cerebras_cloud_sdk';
 import { GitHubClient } from './githubClient';
 import { IntelligentCommitSplitter } from './intelligentCommitSplitter';
+import { suggestAndApplyConflictResolutionsToFile, resolveMergeConflictsUnderPath } from './mergeConflict';
+import * as fs from 'fs';
 import {
   ChatMessage,
   ToolDefinition,
@@ -53,13 +55,13 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'list_pull_requests',
-          description: 'List pull requests for a given repository. Can filter by state (open, closed, or all).',
+          description: 'List pull requests for a repository. Auto-detects current repository if not specified.',
           parameters: {
             type: 'object',
             properties: {
               repo: {
                 type: 'string',
-                description: 'The repository name in \'owner/repo\' format'
+                description: 'The repository name in \'owner/repo\' format (optional, auto-detected from current directory)'
               },
               state: {
                 type: 'string',
@@ -67,7 +69,7 @@ export class GPTOSSToolCaller {
                 enum: ['open', 'closed', 'all']
               }
             },
-            required: ['repo']
+            required: []
           }
         }
       },
@@ -259,13 +261,13 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'create_pr',
-          description: 'Create a pull request for a given repository. ONLY use this after confirming: 1) Head branch exists, 2) User has provided all required info (repo, title, description, head, base), 3) Any uncommitted changes have been handled. NEVER assume branch names - always get them from user.',
+          description: 'Create a pull request. Auto-detects current repository if not specified. ONLY use this after confirming: 1) Head branch exists, 2) User has provided all required info, 3) Any uncommitted changes have been handled.',
           parameters: {
             type: 'object',
             properties: {
               repo: {
                 type: 'string',
-                description: 'The repository name in \'owner/repo\' format'
+                description: 'The repository name in \'owner/repo\' format (optional, auto-detected from current directory)'
               },
               title: {
                 type: 'string',
@@ -284,7 +286,7 @@ export class GPTOSSToolCaller {
                 description: 'The base branch (defaults to \'main\')'
               }
             },
-            required: ['repo', 'title', 'body']
+            required: ['title', 'body']
           }
         }
       },
@@ -568,7 +570,36 @@ export class GPTOSSToolCaller {
             required: ['repo']
           }
         }
-      }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'resolve_merge_conflicts',
+          description: 'Resolve merge conflicts in a specific file or all files under a path. Auto-detects current repository if not specified.',
+          parameters: {
+            type: 'object',
+            properties: {
+              repo: {
+                type: 'string',
+                description: 'The repository name in \'owner/repo\' format (optional, auto-detected from current directory)'
+              },
+              path: {
+                type: 'string',
+                description: 'File or directory to resolve merge conflicts in (defaults to current directory)'
+              },
+              preview_only: {
+                type: 'boolean',
+                description: 'If true, do not write files; just compute resolutions'
+              },
+              explain: {
+                type: 'boolean',
+                description: 'If true, print concise LLM rationales for each resolved conflict'
+              }
+            },
+            required: []
+          }
+        }
+      },
     ];
   }
 
@@ -595,7 +626,8 @@ Instructions:
 - DO NOT provide additional commentary after tool execution unless specifically requested by the user
 - DO NOT use list_repos unless user specifically asks to see all repositories
 - When user asks to create something (PR, issue, branch), ask for required information instead of listing repositories
-- NEVER assume branch names, repository names, or any other parameters - always ask the user
+- DEFAULTS (CLI): Auto-detect current repository and branch from the local git context and use them by default. Do NOT ask the user for repo/branch if detection succeeds.
+- For operations that work on the local workspace (e.g., resolve_merge_conflicts, check_git_status, commit_and_push, intelligent_commit_split), assume the current repository and branch unless the user explicitly specifies others. Ask only if auto-detection fails.
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
 - When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
 - When user asks to "commit and push", use intelligent_commit_split tool with auto_push=true, NOT check_changes_threshold or check_git_status
@@ -680,7 +712,6 @@ Instructions:
     9. NEVER make assumptions about branch names - always ask the user
 
 
-
     Reasoning: ${reasoningLevel}`;
   }
 
@@ -688,16 +719,19 @@ Instructions:
    * Execute a tool call
    */
   public async executeTool(toolName: string, parameters: Record<string, any>): Promise<ToolResult> {
+    // Enhance parameters with auto-detected repository
+    const toolParameters = await this.toolParameters(toolName, parameters);
+    
     switch (toolName) {
       case 'list_repos':
         return await this.githubClient.listRepos();
       
       case 'checkout_branch':
         {
-          const branchResult = await this.githubClient.checkoutBranch(parameters['repo'], parameters['branch']);
+          const branchResult = await this.githubClient.checkoutBranch(toolParameters['repo'], toolParameters['branch']);
           // Attempt local checkout as well for immediate usability
           try {
-            const targetBranch = parameters['branch'];
+            const targetBranch = toolParameters['branch'];
             // Ensure we have the latest refs for that branch
             await this.execAsync(`git fetch origin ${targetBranch}`);
             // Check if local branch already exists
@@ -881,6 +915,48 @@ Instructions:
           branch: parameters['branch'],
           perPage: parameters['per_page']
         });
+      
+      case 'resolve_merge_conflicts':
+        {
+          const targetPath = parameters['path'] || process.cwd();
+          const previewOnly = parameters['preview_only'] || false;
+          const explain = parameters['explain'] || false;
+          try {
+            if (previewOnly) {
+              const summary = await resolveMergeConflictsUnderPath(targetPath, true, explain);
+              return {
+                success: true,
+                action: 'preview',
+                summary
+              } as ToolResult;
+            } else {
+              // If a single file path provided, fast-path to file resolver
+              try {
+                const stat = await fs.promises.stat(targetPath);
+                if (stat.isFile()) {
+                  const writtenPath = await suggestAndApplyConflictResolutionsToFile(targetPath, explain);
+                  return {
+                    success: true,
+                    action: 'file_resolved',
+                    path: writtenPath
+                  } as ToolResult;
+                }
+              } catch {}
+              const summary = await resolveMergeConflictsUnderPath(targetPath, false, explain);
+              return {
+                success: true,
+                action: 'applied',
+                summary
+              } as ToolResult;
+            }
+          } catch (error) {
+            return {
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              suggestion: 'Ensure the path exists and there are conflict markers present'
+            };
+          }
+        }
       
       case 'check_branch_exists':
         return await this.githubClient.checkBranchExists({
@@ -1141,6 +1217,43 @@ Instructions:
         } else {
           return `❌ Branch '${branchName}' does not exist`;
         }
+      case 'resolve_merge_conflicts':
+        if (result.action === 'file_resolved') {
+          return `✅ Merge conflicts resolved in file: ${result.path}`;
+        }
+        if (result.action === 'applied' || result.action === 'preview') {
+          const summary = result.summary || {};
+          const processed = summary.processed ?? 0;
+          const withConflicts = summary.withConflicts ?? 0;
+          const resolved = summary.resolved ?? 0;
+          const errors = summary.errors ?? 0;
+          const results = Array.isArray(summary.results) ? summary.results : [];
+
+          const filesWithConflicts = results.filter((r: any) => r.hadConflict);
+          const writtenFiles = results.filter((r: any) => r.written).map((r: any) => r.file);
+          const resolvedFiles = results.filter((r: any) => r.resolved).map((r: any) => r.file);
+          const unresolvedFiles = results.filter((r: any) => r.hadConflict && !r.resolved).map((r: any) => r.file);
+          const errorFiles = results.filter((r: any) => r.error).map((r: any) => `${r.file} (${r.error})`);
+
+          let message = `✅ Merge conflict ${result.action === 'preview' ? 'preview' : 'resolution'}: ${processed} processed, ${withConflicts} with conflicts, ${resolved} resolved${errors ? `, ${errors} errors` : ''}`;
+          if (filesWithConflicts.length) {
+            message += `\n📁 Files with conflicts: ${filesWithConflicts.map((f: any) => f.file).join(', ')}`;
+          }
+          if (writtenFiles.length) {
+            message += `\n📝 Files written: ${writtenFiles.join(', ')}`;
+          }
+          if (resolvedFiles.length) {
+            message += `\n✅ Resolved files: ${resolvedFiles.join(', ')}`;
+          }
+          if (unresolvedFiles.length) {
+            message += `\n⏳ Unresolved: ${unresolvedFiles.join(', ')}`;
+          }
+          if (errorFiles.length) {
+            message += `\n❌ Errors: ${errorFiles.join(', ')}`;
+          }
+          return message;
+        }
+        return '✅ Merge conflicts resolution completed';
 
       default:
         return `✅ ${toolName} completed successfully`;
@@ -1169,7 +1282,7 @@ Instructions:
       if (message.role === 'user') {
         apiMessages.push({
           role: 'user',
-          content: message.content + '\n\nIMPORTANT: If you need to use a tool, do not write any text content - only make the tool call.'
+          content: message.content
         });
       }
     }
@@ -1180,6 +1293,8 @@ Instructions:
       
       while (turnCount < maxTurns) {
         turnCount++;
+        
+        console.log(`Turn ${turnCount}: Making API call with ${apiMessages.length} messages`);
         
         // Make API call
         const response = await this.client.chat.completions.create({
@@ -1194,6 +1309,8 @@ Instructions:
         const choice = (response as any).choices[0];
         const message = choice.message;
         
+        console.log(`Turn ${turnCount}: Response received, tool_calls:`, message.tool_calls ? message.tool_calls.length : 0);
+        
         // If no tool calls, we're done - stream the final response
         if (!message.tool_calls || message.tool_calls.length === 0) {
           // Only yield content if it's meaningful and not just tool execution commentary
@@ -1206,15 +1323,20 @@ Instructions:
         }
         
         // Save the assistant's message with tool calls
-        apiMessages.push({
+        const assistantMessage = {
           role: 'assistant',
           content: message.content || '',
           tool_calls: message.tool_calls
-        });
+        };
+        
+        console.log(`Turn ${turnCount}: Adding assistant message with ${message.tool_calls.length} tool calls`);
+        apiMessages.push(assistantMessage);
         
         // Execute all tool calls sequentially
         for (const toolCall of message.tool_calls) {
           try {
+            console.log(`Turn ${turnCount}: Executing tool call ${toolCall.id} - ${toolCall.function.name}`);
+            
             const toolName = toolCall.function.name;
             const argsStr = toolCall.function.arguments || '{}';
             const parameters = JSON.parse(argsStr);
@@ -1229,22 +1351,29 @@ Instructions:
             yield `\n\n${userMessage}`;
             
             // Add tool response to conversation for next turn
-            apiMessages.push({
+            const toolMessage = {
               role: 'tool',
               content: JSON.stringify(result),
               tool_call_id: toolCall.id
-            });
+            };
+            
+            console.log(`Turn ${turnCount}: Adding tool response for call ${toolCall.id}`);
+            apiMessages.push(toolMessage);
             
           } catch (error) {
+            console.error(`Turn ${turnCount}: Error executing tool call ${toolCall.id}:`, error);
+            
             const errorMessage = `❌ Error executing tool: ${error instanceof Error ? error.message : 'Unknown error'}`;
             yield `\n\n${errorMessage}`;
             
             // Add error response to conversation
-            apiMessages.push({
+            const errorToolMessage = {
               role: 'tool',
               content: JSON.stringify({ success: false, error: errorMessage }),
               tool_call_id: toolCall.id
-            });
+            };
+            
+            apiMessages.push(errorToolMessage);
           }
         }
       }
@@ -1254,6 +1383,7 @@ Instructions:
       }
       
     } catch (error) {
+      console.error('Error in callToolsStream:', error);
       yield `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   }
@@ -1840,6 +1970,60 @@ Instructions:
   }
 
   /**
+   * Get the current repository information from git config
+   */
+  private async getCurrentRepository(): Promise<{ owner: string; repo: string; fullName: string } | null> {
+    try {
+      const { stdout: remoteUrl } = await this.execAsync('git config --get remote.origin.url');
+      const url = remoteUrl.trim();
+      
+      if (!url) return null;
+      
+      // Parse GitHub URL (both HTTPS and SSH formats)
+      const match = url.match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+      if (match) {
+        const [, owner, repo] = match;
+        const cleanRepo = repo.replace('.git', '');
+        return { owner, repo: cleanRepo, fullName: `${owner}/${cleanRepo}` };
+      }
+      
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Enhance tool parameters with default repository if not provided
+   */
+  private async toolParameters(toolName: string, parameters: Record<string, any>): Promise<Record<string, any>> {
+    const toolParameters = { ...parameters };
+    
+    // If tool needs repo and none provided, use current repo
+    if (!toolParameters.repo && this.toolRequiresRepo(toolName)) {
+      const repoInfo = await this.getCurrentRepository();
+      if (repoInfo) {
+        toolParameters.repo = repoInfo.fullName;
+      }
+    }
+    
+    return toolParameters;
+  }
+
+  /**
+   * Check if a tool requires a repo parameter
+   */
+  private toolRequiresRepo(toolName: string): boolean {
+    return [
+      'list_pull_requests', 'get_pull_request', 'update_pull_request',
+      'list_pull_request_commits', 'list_pull_request_files', 'check_pull_request_merged',
+      'update_pull_request_branch', 'create_pr', 'create_issue', 'create_branch',
+      'list_issues', 'get_issue', 'update_issue', 'merge_pr',
+      'list_repository_commits', 'check_branch_exists'
+    ].includes(toolName);
+  }
+
+  /**
    * Non-streaming version for simpler use cases
    */
   async callTools(messages: ChatMessage[], reasoningLevel: string = 'medium'): Promise<string> {
@@ -1850,3 +2034,4 @@ Instructions:
     return response;
   }
 }
+

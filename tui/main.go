@@ -2,216 +2,792 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"strings"
+	"time"
 
-	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Item represents a list item
-type item struct {
-	title       string
-	description string
+const gap = "\n\n"
+
+// Available spinners
+var spinners = []spinner.Spinner{
+	spinner.Points,
 }
 
-func (i item) Title() string       { return i.title }
-func (i item) Description() string { return i.description }
-func (i item) FilterValue() string { return i.title }
-
-// Model represents the main application state
-type model struct {
-	list     list.Model
-	spinner  spinner.Model
-	input    textinput.Model
-	viewport viewport.Model
-	ready    bool
-	width    int
-	height   int
+// keyMap defines a set of keybindings for the help system
+type keyMap struct {
+	Up    key.Binding
+	Down  key.Binding
+	Quit  key.Binding
+	Clear key.Binding
 }
 
-// Initial model
-func initialModel() model {
-	// Initialize spinner
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+// ShortHelp returns keybindings to be shown in the mini help view
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Quit}
+}
 
-	// Initialize text input
-	ti := textinput.New()
-	ti.Placeholder = "Enter some text..."
-	ti.Focus()
-	ti.CharLimit = 50
-	ti.Width = 40
-
-	// Initialize list
-	items := []list.Item{
-		item{title: "Raspberry Pi's", description: "I have 'em all over my house"},
-		item{title: "Charm", description: "Delightful Go packages for TUI"},
-		item{title: "Go", description: "The best programming language"},
-		item{title: "Bubble Tea", description: "A powerful little TUI framework"},
-		item{title: "Lip Gloss", description: "Style definitions for nice terminal layouts"},
-		item{title: "Bubbles", description: "TUI components for Bubble Tea"},
-		item{title: "Termenv", description: "Advanced ANSI styling for terminal applications"},
-	}
-
-	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
-	l.Title = "What do you want to do?"
-	l.SetShowHelp(true)
-
-	// Initialize viewport
-	vp := viewport.New(60, 10)
-	vp.Style = lipgloss.NewStyle().
-		BorderStyle(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62"))
-
-	return model{
-		list:     l,
-		spinner:  s,
-		input:    ti,
-		viewport: vp,
+// FullHelp returns keybindings for the expanded help view
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down}, // first column
+		{k.Quit},       // second column
+		{k.Clear},      // third column
 	}
 }
 
-// Init function
-func (m model) Init() tea.Cmd {
-	return tea.Batch(
-		spinner.Tick,
-		textinput.Blink,
-	)
+var keys = keyMap{
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "scroll up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "scroll down"),
+	),
+	Quit: key.NewBinding(
+		key.WithKeys("q", "esc", "ctrl+c"),
+		key.WithHelp("q", "quit"),
+	),
+	Clear: key.NewBinding(
+		key.WithKeys("ctrl+l"),
+		key.WithHelp("ctrl+l", "clear chat"),
+	),
 }
 
-// Update function
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
+// helpText provides comprehensive help information
+var helpText = `# Kite - Your Personal Git Assistant
 
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "tab":
-			// Cycle through components
-			if m.input.Focused() {
-				m.input.Blur()
-				m.list.SetShowHelp(true)
-			} else {
-				m.input.Focus()
-				m.list.SetShowHelp(false)
-			}
-		}
-	case tea.WindowSizeMsg:
-		if !m.ready {
-			m.width = msg.Width
-			m.height = msg.Height
-			m.ready = true
+## Quick Commands
+- **?** or **/help** - Show this help
+- **/clear** - Clear chat history
+- **Ctrl+L** - Clear chat (keyboard shortcut)
+- **exit** or **quit** - Exit the application
 
-			// Update viewport content
-			content := lipgloss.NewStyle().
-				Width(m.width - 4).
-				Height(m.height - 4).
-				Render(fmt.Sprintf("Welcome to the Kite Dummy TUI App!\n\n" +
-					"This is a viewport component that can display scrollable content.\n" +
-					"You can use it to show logs, documentation, or any long text.\n\n" +
-					"Features:\n" +
-					"• Beautiful styling with Lip Gloss\n" +
-					"• Interactive list with keyboard navigation\n" +
-					"• Text input with focus management\n" +
-					"• Animated spinner\n" +
-					"• Responsive viewport\n\n" +
-					"Press 'tab' to cycle between components\n" +
-					"Press 'q' to quit"))
+## Navigation
+- **↑/k** - Scroll up in chat
+- **↓/j** - Scroll down in chat
+- **Enter** - Send message
+- **Esc** or **Ctrl+C** - Quit application
 
-			m.viewport.SetContent(content)
-		}
+## What I Can Do
+I'm an expert GitHub repository management assistant. I can help you with:
+
+### Git Operations
+- Commit and push changes
+- Create and switch branches
+- Resolve merge conflicts
+- Intelligent commit splitting
+
+### GitHub Management
+- Create pull requests
+- Manage issues
+- List repositories
+- Check repository status
+
+### Smart Features
+- Automatic conflict detection
+- Intelligent commit message generation
+- Workflow optimization
+- Team pattern learning
+
+## Getting Started
+1. **Authentication**: I'll help you authenticate with GitHub
+2. **Ask Questions**: Just type your Git-related questions
+3. **Use Commands**: Try "commit and push" or "create a PR"
+
+## Examples
+- "Commit and push my changes"
+- "Create a new branch called feature-x"
+- "Show me the open pull requests"
+- "Help me resolve this merge conflict"
+
+*Type ? anytime to see this help again!*`
+
+// Glamour markdown renderer for CLI responses
+func renderMarkdown(content string) string {
+	if content == "" {
+		return content
 	}
 
-	// Update components
-	var cmd tea.Cmd
-	m.spinner, cmd = m.spinner.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.input, cmd = m.input.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.list, cmd = m.list.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
-
-	return m, tea.Batch(cmds...)
-}
-
-// View function
-func (m model) View() string {
-	if !m.ready {
-		return "\n  Initializing..."
+	// Create a custom renderer with dark theme and proper width handling
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(80),
+	)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
 	}
 
-	// Define styles
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#FAFAFA")).
-		Background(lipgloss.Color("#7D56F4")).
-		Padding(0, 1).
-		Bold(true)
+	out, err := r.Render(content)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
+	}
 
-	sectionStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
-		Padding(1, 2).
-		Margin(0, 1)
-
-	// Create the layout
-	var sections []string
-
-	// Title
-	sections = append(sections, titleStyle.Render("✨ Amazing TUI Application ✨"))
-
-	// Top row: Spinner and Input
-	topRow := lipgloss.JoinHorizontal(
-		lipgloss.Left,
-		sectionStyle.Render(fmt.Sprintf("Loading: %s", m.spinner.View())),
-		sectionStyle.Render(fmt.Sprintf("Input: %s", m.input.View())),
-	)
-
-	// Middle row: List
-	listSection := sectionStyle.Render(m.list.View())
-
-	// Bottom row: Viewport
-	viewportSection := sectionStyle.Render(m.viewport.View())
-
-	// Combine all sections
-	content := lipgloss.JoinVertical(
-		lipgloss.Left,
-		sections[0],
-		topRow,
-		listSection,
-		viewportSection,
-	)
-
-	// Center the content
-	return lipgloss.Place(
-		m.width,
-		m.height,
-		lipgloss.Center,
-		lipgloss.Center,
-		content,
-	)
+	return out
 }
+
+// renderMarkdownWithWidth renders markdown content with a specific width
+func renderMarkdownWithWidth(content string, width int) string {
+	if content == "" {
+		return content
+	}
+
+	// Create a custom renderer with specified width
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
+	}
+
+	out, err := r.Render(content)
+	if err != nil {
+		// Fallback to simple rendering if Glamour fails
+		return content
+	}
+
+	return out
+}
+
+var (
+	textStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
+	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+)
 
 func main() {
-	p := tea.NewProgram(
-		initialModel(),
-		tea.WithAltScreen(),       // Use alternate screen buffer
-		tea.WithMouseCellMotion(), // Turn on mouse support so we can track the mouse wheel
-	)
+	// Check if we're running in test mode
+	if len(os.Args) > 1 && os.Args[1] == "test" {
+		testToolCalling()
+		return
+	}
+
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		fmt.Printf("Alas, there's been an error: %v", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
+}
+
+func testToolCalling() {
+	fmt.Println("Testing Kite Go CLI Tool Calling...")
+
+	// Test backend client initialization
+	_, err := NewBackendClient()
+	if err != nil {
+		log.Printf("Failed to initialize backend client: %v", err)
+	} else {
+		fmt.Println("✅ Backend client initialized successfully")
+	}
+
+	// Test tools definition
+	tools := GetTools()
+	fmt.Printf("✅ Loaded %d tools\n", len(tools))
+
+	// Test git action detection
+	testTools := []string{
+		"checkout_branch",
+		"commit_and_push",
+		"create_pr",
+		"list_repos",
+		"get_issue",
+	}
+
+	for _, tool := range testTools {
+		isGit := IsGitAction(tool)
+		fmt.Printf("Tool '%s': Git action = %t\n", tool, isGit)
+	}
+
+	// Test Cerebras client initialization
+	cerebras, err := NewCerebrasClient()
+	if err != nil {
+		log.Printf("Failed to initialize Cerebras client: %v", err)
+		fmt.Println("⚠️  Cerebras client not available (check CEREBRAS_API_KEY)")
+	} else {
+		fmt.Println("✅ Cerebras client initialized successfully")
+		if cerebras.backend != nil {
+			fmt.Println("✅ Backend integration available")
+		} else {
+			fmt.Println("⚠️  Backend integration not available")
+		}
+	}
+
+	fmt.Println("\n🎉 Tool calling setup complete!")
+	fmt.Println("\nTo test the full functionality:")
+	fmt.Println("1. Start the TypeScript backend: cd ../kite && npm run dev")
+	fmt.Println("2. Set your CEREBRAS_API_KEY environment variable")
+	fmt.Println("3. Run: go run .")
+}
+
+type (
+	errMsg error
+)
+
+type model struct {
+	viewport        viewport.Model
+	messages        []string
+	textarea        textarea.Model
+	senderStyle     lipgloss.Style
+	err             error
+	spinner         spinner.Model
+	spinnerIdx      int
+	isSpinning      bool
+	spinnerMsg      string
+	cerebras        *CerebrasClient
+	auth            *AuthClient
+	chatHistory     []CerebrasMessage
+	currentResponse string
+	isStreaming     bool
+	responseChan    <-chan string
+	errorChan       <-chan error
+	keys            keyMap
+	help            help.Model
+	showHelp        bool
+}
+
+func initialModel() model {
+	ta := textarea.New()
+	ta.Placeholder = "Send a message..."
+	ta.Focus()
+
+	ta.Prompt = ">> "
+	ta.CharLimit = 280
+
+	ta.SetWidth(30)
+	ta.SetHeight(1)
+
+	// Remove cursor line styling
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+
+	ta.ShowLineNumbers = false
+
+	vp := viewport.New(30, 5)
+	welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
+
+*Ready to help you with your Git workflow!*`
+	renderedWelcome := renderMarkdown(welcomeMessage)
+	vp.SetContent(renderedWelcome)
+	vp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
+
+	ta.KeyMap.InsertNewline.SetEnabled(false)
+
+	// Initialize spinner
+	s := spinner.New()
+	s.Style = spinnerStyle
+	s.Spinner = spinners[0]
+
+	// Initialize Cerebras client
+	cerebras, err := NewCerebrasClient()
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Cerebras client: %v", err)
+	}
+
+	// Initialize auth client
+	auth := NewAuthClient()
+
+	return model{
+		textarea:        ta,
+		messages:        []string{},
+		viewport:        vp,
+		senderStyle:     lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
+		err:             nil,
+		spinner:         s,
+		spinnerIdx:      0,
+		isSpinning:      false,
+		spinnerMsg:      "",
+		cerebras:        cerebras,
+		auth:            auth,
+		chatHistory:     []CerebrasMessage{},
+		currentResponse: "",
+		isStreaming:     false,
+		responseChan:    nil,
+		errorChan:       nil,
+		keys:            keys,
+		help:            help.New(),
+		showHelp:        false,
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return tea.Batch(
+		textarea.Blink,
+		m.spinner.Tick,
+		tea.SetWindowTitle("Kite - Your Personal Git Assistant"),
+		m.checkAuthOnStartup(),
+	)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		tiCmd tea.Cmd
+		vpCmd tea.Cmd
+		spCmd tea.Cmd
+		hpCmd tea.Cmd
+	)
+
+	m.textarea, tiCmd = m.textarea.Update(msg)
+	m.viewport, vpCmd = m.viewport.Update(msg)
+	m.spinner, spCmd = m.spinner.Update(msg)
+	m.help, hpCmd = m.help.Update(msg)
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.viewport.Width = msg.Width
+		m.textarea.SetWidth(msg.Width)
+		m.help.Width = msg.Width
+		// Calculate viewport height with proper spacing
+		textareaHeight := m.textarea.Height()
+		gapHeight := lipgloss.Height(gap)
+		m.viewport.Height = msg.Height - textareaHeight - gapHeight - 4 // Extra margin for help text
+
+		if len(m.messages) > 0 {
+			// Join messages and render markdown for the entire content
+			content := strings.Join(m.messages, "\n")
+			// Apply width constraint to prevent overflow and ensure clean rendering
+			styledContent := lipgloss.NewStyle().
+				Width(m.viewport.Width - 4).
+				Height(m.viewport.Height).
+				Render(content)
+			m.viewport.SetContent(styledContent)
+		}
+		m.viewport.GotoBottom()
+	case tea.KeyMsg:
+		switch msg.Type {
+		case tea.KeyCtrlC, tea.KeyEsc:
+			fmt.Println(m.textarea.Value())
+			return m, tea.Quit
+		case tea.KeyRunes:
+		case tea.KeyCtrlL:
+			// Clear chat history and messages
+			m.messages = []string{}
+			m.chatHistory = []CerebrasMessage{}
+			m.currentResponse = ""
+
+			// Show welcome message again
+			welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
+
+*Ready to help you with your Git workflow!*`
+			renderedWelcome := renderMarkdown(welcomeMessage)
+			m.viewport.SetContent(renderedWelcome)
+			m.viewport.GotoBottom()
+			return m, nil
+		case tea.KeyEnter:
+			if m.isStreaming {
+				// Don't allow new messages while streaming
+				return m, nil
+			}
+
+			message := m.textarea.Value()
+			if message == "" {
+				return m, nil
+			}
+
+			// Handle special commands
+			switch strings.ToLower(strings.TrimSpace(message)) {
+			case "/clear":
+				// Clear chat history and messages
+				m.messages = []string{}
+				m.chatHistory = []CerebrasMessage{}
+				m.currentResponse = ""
+
+				// Show welcome message again
+				welcomeMessage := `# Welcome to Kite - Your Personal Git Assistant!
+
+*Ready to help you with your Git workflow!*`
+				renderedWelcome := renderMarkdown(welcomeMessage)
+				m.viewport.SetContent(renderedWelcome)
+				m.textarea.Reset()
+				m.viewport.GotoBottom()
+				return m, nil
+
+			case "/help", "?":
+				// Show help
+				renderedHelp := renderMarkdown(helpText)
+				m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedHelp)
+				styledContent := lipgloss.NewStyle().
+					Width(m.viewport.Width - 4).
+					Height(m.viewport.Height).
+					Render(strings.Join(m.messages, "\n"))
+				m.viewport.SetContent(styledContent)
+				m.textarea.Reset()
+				m.viewport.GotoBottom()
+				return m, nil
+
+			case "exit", "quit":
+				// Quit the application
+				return m, tea.Quit
+			}
+
+			m.messages = append(m.messages, m.senderStyle.Render("You: ")+message)
+
+			// Add user message to chat history
+			m.chatHistory = append(m.chatHistory, CerebrasMessage{
+				Role:    "user",
+				Content: message,
+			})
+
+			// Start streaming response
+			if m.cerebras != nil {
+				m.startSpinner("Kite is cooking...")
+				m.isStreaming = true
+				m.currentResponse = ""
+				// Add empty bot message that will be filled with streaming content
+				m.messages = append(m.messages, textStyle.Render("Kite: "))
+
+				return m, m.makeAPIRequest()
+			} else {
+				// Fallback if Cerebras client is not available
+				m.startSpinner("Cerebras client not available...")
+				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return spinnerCompleteMsg{response: "**Error:** Cerebras client not initialized. Please check your `CEREBRAS_API_KEY` environment variable."}
+				})
+			}
+		}
+	case spinnerCompleteMsg:
+		m.stopSpinner()
+		// Render markdown for the bot response
+		renderedResponse := renderMarkdown(msg.response)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedResponse)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.textarea.Reset()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case streamingChunkMsg:
+		// Update the current response with the new chunk
+		m.currentResponse += msg.chunk
+
+		// Update the last message with the current streaming content (render markdown)
+		if len(m.messages) > 0 {
+			renderedResponse := renderMarkdownWithWidth(m.currentResponse, m.viewport.Width)
+			m.messages[len(m.messages)-1] = textStyle.Render("Kite: ") + renderedResponse
+			styledContent := lipgloss.NewStyle().
+				Width(m.viewport.Width - 4).
+				Height(m.viewport.Height).
+				Render(strings.Join(m.messages, "\n"))
+			m.viewport.SetContent(styledContent)
+			m.viewport.GotoBottom()
+		}
+
+		// Continue listening for more chunks using stored channels
+		return m, m.handleStreaming(m.responseChan, m.errorChan)
+
+	case startStreamingMsg:
+		// Store the channels in the model
+		m.responseChan = msg.responseChan
+		m.errorChan = msg.errorChan
+		// Start the streaming
+		return m, m.handleStreaming(msg.responseChan, msg.errorChan)
+
+	case apiResponseMsg:
+		m.isStreaming = false
+		m.stopSpinner()
+		// Clear the channels
+		m.responseChan = nil
+		m.errorChan = nil
+
+		// Add assistant message to chat history
+		if msg.response != "" {
+			m.chatHistory = append(m.chatHistory, CerebrasMessage{
+				Role:    "assistant",
+				Content: msg.response,
+			})
+		}
+
+		// Update the last message with the full response (render markdown)
+		if len(m.messages) > 0 {
+			renderedResponse := renderMarkdownWithWidth(msg.response, m.viewport.Width)
+			m.messages[len(m.messages)-1] = textStyle.Render("Kite: ") + renderedResponse
+			styledContent := lipgloss.NewStyle().
+				Width(m.viewport.Width - 4).
+				Height(m.viewport.Height).
+				Render(strings.Join(m.messages, "\n"))
+			m.viewport.SetContent(styledContent)
+			m.viewport.GotoBottom()
+		}
+
+		m.textarea.Reset()
+		return m, nil
+
+	case authRequiredMsg:
+		m.isStreaming = false
+		m.stopSpinner()
+		// Clear the channels
+		m.responseChan = nil
+		m.errorChan = nil
+
+		// Show authentication message
+		authMessage := `# 🔐 Authentication Required
+
+**You are not authenticated.** Let's authenticate you first!
+
+I'll open your browser to complete the authentication process.
+
+> This will allow you to access all Kite features including GitHub integration.`
+		renderedAuth := renderMarkdown(authMessage)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedAuth)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.viewport.GotoBottom()
+
+		// Start authentication flow
+		return m, m.startAuthFlow()
+
+	case authCompleteMsg:
+		// Authentication completed, show success message
+		successMessage := `# ✅ Authentication Complete!
+
+**Authentication completed successfully!**
+
+You can now continue using Kite with all features including:
+
+- 🔗 GitHub repository access
+- 🛠️ Tool calling capabilities
+- 📊 Repository analytics
+
+*Ready to help you with your Git workflow!*`
+		renderedSuccess := renderMarkdown(successMessage)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedSuccess)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.textarea.Reset()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	case apiErrorMsg:
+		m.isStreaming = false
+		m.stopSpinner()
+		// Clear the channels
+		m.responseChan = nil
+		m.errorChan = nil
+		// Render error message as markdown (in case it contains formatting)
+		renderedError := renderMarkdown("Error: " + msg.error)
+		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedError)
+		styledContent := lipgloss.NewStyle().
+			Width(m.viewport.Width - 4).
+			Height(m.viewport.Height).
+			Render(strings.Join(m.messages, "\n"))
+		m.viewport.SetContent(styledContent)
+		m.textarea.Reset()
+		m.viewport.GotoBottom()
+		return m, nil
+
+	// We handle errors just like any other message
+	case errMsg:
+		m.err = msg
+		return m, nil
+	}
+
+	return m, tea.Batch(tiCmd, vpCmd, spCmd, hpCmd)
+}
+
+func (m *model) makeAPIRequest() tea.Cmd {
+	return func() tea.Msg {
+		// Check authentication first
+		if m.auth != nil {
+			authenticated, err := m.auth.CheckAuthStatus()
+			if err != nil {
+				return apiErrorMsg{error: fmt.Sprintf("Failed to check authentication status: %v", err)}
+			}
+
+			if !authenticated {
+				// Return a special message to trigger auth flow
+				return authRequiredMsg{}
+			}
+		}
+
+		// Create channels for the API call
+		responseChan := make(chan string)
+		errorChan := make(chan error)
+
+		// Start the API call in a goroutine
+		go func() {
+			// Use tool calling if backend is available, otherwise fall back to regular chat
+			if m.cerebras.backend != nil {
+				m.cerebras.StreamChatCompletionWithTools(m.chatHistory, responseChan, errorChan)
+			} else {
+				m.cerebras.StreamChatCompletion(m.chatHistory, responseChan, errorChan)
+			}
+		}()
+
+		// Return a command that will handle streaming
+		return startStreamingMsg{
+			responseChan: responseChan,
+			errorChan:    errorChan,
+		}
+	}
+}
+
+func (m *model) handleStreaming(responseChan <-chan string, errorChan <-chan error) tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case content, ok := <-responseChan:
+			if !ok {
+				// Response channel closed, finish streaming
+				if m.currentResponse != "" {
+					return apiResponseMsg{response: m.currentResponse}
+				} else {
+					// Check error channel
+					select {
+					case err, ok := <-errorChan:
+						if ok {
+							return apiErrorMsg{error: err.Error()}
+						}
+					default:
+					}
+					return apiErrorMsg{error: "No response received"}
+				}
+			}
+			// Send the chunk for immediate display
+			return streamingChunkMsg{chunk: content}
+		case err, ok := <-errorChan:
+			if !ok {
+				// Error channel closed, check if we have a response
+				if m.currentResponse != "" {
+					return apiResponseMsg{response: m.currentResponse}
+				}
+				return apiErrorMsg{error: "No response received"}
+			}
+			return apiErrorMsg{error: err.Error()}
+		}
+	}
+}
+
+func (m *model) startSpinner(message string) {
+	m.isSpinning = true
+	m.spinnerMsg = message
+	// Cycle to next spinner
+	m.spinnerIdx = (m.spinnerIdx + 1) % len(spinners)
+	m.spinner.Spinner = spinners[m.spinnerIdx]
+}
+
+func (m *model) stopSpinner() {
+	m.isSpinning = false
+	m.spinnerMsg = ""
+}
+
+func (m *model) checkAuthOnStartup() tea.Cmd {
+	return func() tea.Msg {
+		// Check authentication status on startup
+		if m.auth != nil {
+			authenticated, err := m.auth.CheckAuthStatus()
+			if err != nil {
+				// Log error but don't show to user yet
+				log.Printf("Failed to check auth status on startup: %v", err)
+				return nil
+			}
+
+			if !authenticated {
+				// Return auth required message to trigger auth flow
+				return authRequiredMsg{}
+			}
+		}
+		return nil
+	}
+}
+
+func (m *model) startAuthFlow() tea.Cmd {
+	return func() tea.Msg {
+		// Start authentication in a goroutine
+		go func() {
+			if m.auth != nil {
+				if err := m.auth.StartAuthFlow(); err != nil {
+					// Send error message back to the UI
+					// We'll handle this by updating the UI directly
+					fmt.Printf("Authentication failed: %v\n", err)
+				} else {
+					// Authentication successful, update the UI
+					fmt.Println("✅ Authentication completed successfully!")
+				}
+			}
+		}()
+
+		// Return a command that will show a waiting message
+		return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return authCompleteMsg{}
+		})
+	}
+}
+
+func (m model) View() string {
+	content := m.viewport.View()
+
+	// Add spinner if active
+	if m.isSpinning {
+		spinnerContent := fmt.Sprintf("\n %s %s", m.spinner.View(), textStyle.Render(m.spinnerMsg))
+		content += spinnerContent
+	}
+
+	// Add help view if showing help
+	if m.showHelp {
+		helpView := m.help.View(m.keys)
+		content += "\n" + helpStyle.Render("--- Help Mode ---\n"+helpView)
+	}
+
+	// Add muted help text at the bottom
+	mutedHelp := helpStyle.Render("Type /help for detailed help • Ctrl+L to clear chat • Esc to quit")
+
+	// Ensure proper spacing and prevent overlapping
+	return lipgloss.NewStyle().
+		Margin(0, 1).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("240")).
+		Render(fmt.Sprintf(
+			"%s%s%s\n%s",
+			content,
+			gap,
+			m.textarea.View(),
+			mutedHelp,
+		))
+}
+
+// Custom message types
+type spinnerCompleteMsg struct {
+	response string
+}
+
+type apiResponseMsg struct {
+	response string
+}
+
+type authRequiredMsg struct{}
+
+type authCompleteMsg struct{}
+
+type apiErrorMsg struct {
+	error string
+}
+
+type streamingChunkMsg struct {
+	chunk string
+}
+
+type startStreamingMsg struct {
+	responseChan <-chan string
+	errorChan    <-chan error
 }

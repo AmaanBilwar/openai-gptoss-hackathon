@@ -9,6 +9,7 @@ export default function CLIAuthSuccessPage() {
   const searchParams = useSearchParams();
   const [isProcessing, setIsProcessing] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState(10);
 
   useEffect(() => {
     const processCLIAuth = async () => {
@@ -60,6 +61,22 @@ export default function CLIAuthSuccessPage() {
 
     processCLIAuth();
   }, [isLoaded, isSignedIn, user]);
+
+  // Auto-close countdown effect
+  useEffect(() => {
+    if (!isProcessing && !error && countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    }
+
+    // Close window when countdown reaches 0
+    if (countdown === 0) {
+      window.close();
+    }
+  }, [isProcessing, error, countdown]);
 
   if (!isLoaded) {
     return (
@@ -121,16 +138,28 @@ export default function CLIAuthSuccessPage() {
         <h1 className="text-3xl font-bold text-gray-800 mb-4">
           Authentication Successful!
         </h1>
+        <p className="text-sm pb-6 text-gray-500">
+          Welcome,{" "}
+          <span className="font-semibold underline underline-offset-2">
+            {user.firstName || user.primaryEmailAddress?.emailAddress}!
+          </span>
+        </p>
         <p className="text-gray-600 mb-6">
-          You've successfully signed in to Kite CLI. You can now return to your
-          terminal and continue using the CLI.
+          You've successfully signed in to Kite.
+          <br />
+          You can now return to your terminal and continue using Kite.
+          <br />
+          This tab is safe to close now.
         </p>
-        <div className="bg-gray-100 p-4 rounded-lg mb-6">
-          <p className="text-sm text-gray-700 font-mono">bun run chat</p>
+        <div className="text-sm text-blue-600">
+          This window will close automatically in {countdown} seconds...
         </div>
-        <p className="text-sm text-gray-500">
-          Welcome, {user.firstName || user.primaryEmailAddress?.emailAddress}!
-        </p>
+        <button
+          onClick={() => window.close()}
+          className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          Close Now
+        </button>
       </div>
     </main>
   );

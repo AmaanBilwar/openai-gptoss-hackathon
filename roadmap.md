@@ -6,25 +6,19 @@
 - [x] add fallback responses in the system prompt
 - [x] auth with clerk - Ani
 - [x] compositional / sequential tool calling - Amaan
+- [x] TUI - Amaan --- basic 
 - [x] all functions related to issues - Amaan
+- [x] merge conflicts - Ani
+- [x] add auth to cli (ts backend) - Amaan
 
 ---
 ## need immediate attention
 
-
-- [ ] merge conflicts - Ani
 - [ ] rag commit feature - Vishesh
-    - [ ] pr reviewer feature can utilize the rag features to integrate it - Vishesh 
-- [ ] add auth to cli (ts backend) - Amaan
-- [ ] Infinite Chat - Amaan
 
----
-## second in command
+- [ ] lfs 
 
-- [ ] TUI - Vishesh
-- [ ] understand + counter rate limits 
-- [ ] llm response caching
-- [ ] llm rate limits
+
 - [ ] web dashboard
     - [ ] sidebar
     - [ ] settings page
@@ -35,11 +29,19 @@
         - [ ] activity page  
     - [ ] login butons
 
+
+- [ ] Save Chats + infinite chat - Amaan
+
+---
+## second in command
+
+- [ ] understand + counter rate limits 
+- [ ] llm response caching
+- [ ] llm rate limits
+
 ---
 ## up for debate
 
-- [ ] figure out communication (REST/gRPC?)
-- [ ] should we get rid of the python backend?
 - [ ] bring  your own api key ? 
 
 ---

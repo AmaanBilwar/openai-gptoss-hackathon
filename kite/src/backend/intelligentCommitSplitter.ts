@@ -324,7 +324,6 @@ export class IntelligentCommitSplitter {
   }
 
 
-
   /**
    * Group changes using heuristic rules as fallback
    */
