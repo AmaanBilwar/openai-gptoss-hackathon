@@ -542,7 +542,7 @@ export class IntelligentCommitSplitter {
     // Add 'q' to quit at the end
     patchInput += 'q\n';
     
-    // Patch input: ${patchInput.replace(/\n/g, ' ')}
+    console.log(`   🔧 Staging ${targetHunks.length} hunks for ${filePath} (${patchInput.replace(/\n/g, ' ').trim()})`);
     
     // Execute git add --patch with automated input using spawn for better control
     try {
@@ -571,8 +571,10 @@ export class IntelligentCommitSplitter {
         
         gitProcess.on('close', (code: number | null) => {
           if (code === 0) {
+            console.log(`   ✅ Successfully staged hunks for ${filePath}`);
             resolve();
           } else {
+            console.error(`   ❌ git add --patch failed for ${filePath}: ${stderr}`);
             reject(new Error(`git add --patch failed with code ${code}. stderr: ${stderr}`));
           }
         });
@@ -584,7 +586,8 @@ export class IntelligentCommitSplitter {
       
     } catch (error) {
       // If interactive patch fails, fall back to staging entire file
-      throw new Error(`Interactive patch staging failed: ${error}`);
+      console.log(`   ⚠️  Interactive patch failed for ${filePath}, falling back to full file staging`);
+      await execAsync(`git add "${filePath}"`);
     }
   }
 
@@ -600,7 +603,7 @@ export class IntelligentCommitSplitter {
     try {
       const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD');
       currentBranch = stdout.trim();
-      console.log(`📍 Current branch: ${currentBranch}`);
+      // Current branch: ${currentBranch}
     } catch (error) {
       console.error(`❌ Error getting current branch: ${error}`);
       return false;
@@ -611,7 +614,7 @@ export class IntelligentCommitSplitter {
     try {
       await execAsync(`git checkout -b ${backupBranch}`);
       await execAsync(`git checkout ${currentBranch}`);
-      console.log(`💾 Created backup branch: ${backupBranch}`);
+      // Created backup branch: ${backupBranch}
     } catch (error) {
       console.error(`❌ Error creating backup branch: ${error}`);
       return false;
