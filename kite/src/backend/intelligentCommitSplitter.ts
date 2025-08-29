@@ -303,6 +303,10 @@ export class IntelligentCommitSplitter {
       const linesAdded = (diffContent.match(/^\+/gm) || []).length;
       const linesRemoved = (diffContent.match(/^-/gm) || []).length;
 
+      if (changeType === 'added') {
+        console.log(`   📁 Found new file: ${filePath} (${linesAdded} lines, ${hunks.length} hunks)`);
+      }
+
       changes.push({
         file_path: filePath,
         change_type: changeType,
@@ -481,6 +485,13 @@ export class IntelligentCommitSplitter {
         if (changeType === 'deleted') {
           // For deleted files, use git rm
           await execAsync(`git rm "${filePath}"`);
+          continue;
+        }
+        
+        // For new files (no hunks), stage the entire file
+        if (changeType === 'added' || fileHunks.length === 0) {
+          console.log(`   📁 Staging new file: ${filePath}`);
+          await execAsync(`git add "${filePath}"`);
           continue;
         }
         
@@ -911,23 +922,30 @@ export class IntelligentCommitSplitter {
       });
     }
     
-    // Handle remaining unprocessed hunks
+    // Handle remaining unprocessed hunks and files without hunks (like new files)
     const allHunks = changes.flatMap(change => change.hunks || []);
     const remainingHunks = allHunks.filter(hunk => {
       const hunkId = `${hunk.filePath}:${hunk.oldStart}-${hunk.newStart}`;
       return !processedHunks.has(hunkId);
     });
     
-    if (remainingHunks.length > 0) {
-      // Processing ${remainingHunks.length} unprocessed hunks heuristically...
-      const remainingFiles = changes.filter(change => 
-        change.hunks?.some(hunk => {
-          const hunkId = `${hunk.filePath}:${hunk.oldStart}-${hunk.newStart}`;
-          return !processedHunks.has(hunkId);
-        })
-      );
-      
-      const heuristicGroups = await this.groupChangesHeuristic(remainingFiles);
+    // Find files that have no hunks (like new files) or have unprocessed hunks
+    const processedFileIndices = new Set<number>();
+    clusters.forEach(cluster => {
+      cluster.hunks.forEach(h => processedFileIndices.add(h.changeIndex));
+    });
+    
+    const unprocessedFiles = changes.filter((change, index) => 
+      !processedFileIndices.has(index) || 
+      change.hunks?.some(hunk => {
+        const hunkId = `${hunk.filePath}:${hunk.oldStart}-${hunk.newStart}`;
+        return !processedHunks.has(hunkId);
+      })
+    );
+    
+    if (unprocessedFiles.length > 0) {
+      console.log(`🔧 Processing ${unprocessedFiles.length} unprocessed files heuristically (including new files without hunks)...`);
+      const heuristicGroups = await this.groupChangesHeuristic(unprocessedFiles);
       // Add remaining hunks to heuristic groups
       heuristicGroups.forEach(group => {
         group.hunks = group.files.flatMap(file => file.hunks || []);
