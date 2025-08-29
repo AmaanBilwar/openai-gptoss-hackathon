@@ -139,37 +139,49 @@ export class IntelligentCommitSplitter {
       const diffUnstaged = parse(stdoutUnstaged);
       const hunks: DiffHunk[] = [];
 
-      for (const file of diffStaged) {
-        for (const hunk of file.chunks) {
-          hunks.push({
-            filePath: file.to || file.from || '',
-            oldStart: hunk.oldStart,
-            oldLines: hunk.oldLines,
-            newStart: hunk.newStart,
-            newLines: hunk.newLines,
-            changeType: 'staged',
-            header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
-            content: hunk.changes.map(change => change.content),
-            context: hunk.changes.map(change => change.content).join('\n')
-          });
-        }
-      }
+             for (const file of diffStaged) {
+         // Skip files with /dev/null paths (deleted files)
+         const actualFilePath = file.to !== '/dev/null' ? file.to : file.from;
+         if (!actualFilePath || actualFilePath === '/dev/null') {
+           continue;
+         }
+         
+         for (const hunk of file.chunks) {
+           hunks.push({
+             filePath: actualFilePath,
+             oldStart: hunk.oldStart,
+             oldLines: hunk.oldLines,
+             newStart: hunk.newStart,
+             newLines: hunk.newLines,
+             changeType: 'staged',
+             header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+             content: hunk.changes.map(change => change.content),
+             context: hunk.changes.map(change => change.content).join('\n')
+           });
+         }
+       }
 
-      for (const file of diffUnstaged) {
-        for (const hunk of file.chunks) {
-          hunks.push({
-            filePath: file.to || file.from || '',
-            oldStart: hunk.oldStart,
-            oldLines: hunk.oldLines,
-            newStart: hunk.newStart,
-            newLines: hunk.newLines,
-            changeType: 'unstaged',
-            header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
-            content: hunk.changes.map(change => change.content),
-            context: hunk.changes.map(change => change.content).join('\n')
-          });
-        }
-      }
+       for (const file of diffUnstaged) {
+         // Skip files with /dev/null paths (deleted files)
+         const actualFilePath = file.to !== '/dev/null' ? file.to : file.from;
+         if (!actualFilePath || actualFilePath === '/dev/null') {
+           continue;
+         }
+         
+         for (const hunk of file.chunks) {
+           hunks.push({
+             filePath: actualFilePath,
+             oldStart: hunk.oldStart,
+             oldLines: hunk.oldLines,
+             newStart: hunk.newStart,
+             newLines: hunk.newLines,
+             changeType: 'unstaged',
+             header: `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
+             content: hunk.changes.map(change => change.content),
+             context: hunk.changes.map(change => change.content).join('\n')
+           });
+         }
+       }
 
       return hunks;
     } catch (error) {
@@ -230,7 +242,7 @@ export class IntelligentCommitSplitter {
     try {
       // Check if file exists in working directory
       const fileExistsInWorkdir = require('fs').existsSync(filePath);
-      
+
       // Check if file exists in HEAD
       const headContent = await this.getFileContent(filePath, 'HEAD');
       const fileExistsInHead = headContent !== null;
@@ -255,6 +267,11 @@ export class IntelligentCommitSplitter {
     const changes: FileChange[] = [];
 
     for (const filePath of changedFiles) {
+      // Skip invalid paths
+      if (filePath === '/dev/null' || filePath.includes('/dev/null')) {
+        continue;
+      }
+      
       const changeType = await this.determineChangeType(filePath);
       const diffContent = await this.getFileDiff(filePath);
       const hunks = await this.getGitDiffHunks(filePath);
@@ -441,9 +458,14 @@ export class IntelligentCommitSplitter {
    * Apply hunks to create a patch and stage it using git add --patch
    */
   private async applyHunks(hunks: DiffHunk[]): Promise<void> {
-    // Group hunks by file
+    // Group hunks by file, filtering out invalid paths like /dev/null
     const hunksByFile = new Map<string, DiffHunk[]>();
     for (const hunk of hunks) {
+      // Skip invalid paths like /dev/null (used for deleted files)
+      if (hunk.filePath === '/dev/null' || hunk.filePath.includes('/dev/null')) {
+        continue;
+      }
+      
       if (!hunksByFile.has(hunk.filePath)) {
         hunksByFile.set(hunk.filePath, []);
       }
@@ -452,30 +474,35 @@ export class IntelligentCommitSplitter {
 
     // Apply hunks for each file using git add --patch
     for (const [filePath, fileHunks] of hunksByFile) {
-      console.log(`   🔧 Selectively staging ${fileHunks.length} hunks from ${filePath}`);
-      
       try {
+        // Check if this is a deleted file
+        const changeType = await this.determineChangeType(filePath);
+        
+        if (changeType === 'deleted') {
+          // For deleted files, use git rm
+          await execAsync(`git rm "${filePath}"`);
+          continue;
+        }
+        
         // Check if file has unstaged changes
-        const { stdout: diffOutput } = await execAsync(`git diff --unified=3 ${filePath}`);
+        const { stdout: diffOutput } = await execAsync(`git diff --unified=3 -- "${filePath}"`);
         
         if (!diffOutput.trim()) {
-          console.log(`   ⚠️  No unstaged changes in ${filePath}, staging entire file`);
+          // No unstaged changes, stage entire file
           await execAsync(`git add "${filePath}"`);
           continue;
         }
 
         // Use git add --patch with automated responses
         await this.stageHunksInteractively(filePath, fileHunks);
-        console.log(`   ✅ Selectively staged hunks from ${filePath}`);
         
       } catch (error) {
-        console.error(`   ❌ Error with selective staging for ${filePath}:`, error);
+        console.error(`   ❌ Error staging ${filePath}:`, error);
         // Fallback: stage the entire file if selective staging fails
-        console.log(`   🔄 Falling back to staging entire file: ${filePath}`);
         try {
           await execAsync(`git add "${filePath}"`);
         } catch (fallbackError) {
-          console.error(`   ❌ Fallback also failed:`, fallbackError);
+          console.error(`   ❌ Fallback failed for ${filePath}:`, fallbackError);
         }
       }
     }
@@ -515,7 +542,7 @@ export class IntelligentCommitSplitter {
     // Add 'q' to quit at the end
     patchInput += 'q\n';
     
-    console.log(`   📝 Patch input for ${filePath}: ${patchInput.replace(/\n/g, ' ')}`);
+    // Patch input: ${patchInput.replace(/\n/g, ' ')}
     
     // Execute git add --patch with automated input using spawn for better control
     try {
@@ -609,11 +636,11 @@ export class IntelligentCommitSplitter {
         } else {
           console.log(`   ⚠️  No hunks to apply for group ${group.feature_name}, falling back to full files`);
           // Fallback to staging full files if no hunks
-          for (const fileChange of group.files) {
-            const filePath = fileChange.file_path;
-            if (fileChange.change_type === 'deleted') {
+        for (const fileChange of group.files) {
+          const filePath = fileChange.file_path;
+          if (fileChange.change_type === 'deleted') {
               await execAsync(`git rm "${filePath}"`);
-            } else {
+          } else {
               await execAsync(`git add "${filePath}"`);
             }
           }
@@ -709,7 +736,7 @@ export class IntelligentCommitSplitter {
         console.log(`   Hunks: ${group.hunks.length} hunks across ${[...new Set(group.hunks.map(h => h.filePath))].length} files`);
       }
 
-      await this.executeCommitSplitting(commitGroups, autoPush);
+        await this.executeCommitSplitting(commitGroups, autoPush);
 
       return commitGroups;
 
@@ -796,7 +823,7 @@ export class IntelligentCommitSplitter {
     changes: FileChange[],
     clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>
   ): Promise<CommitGroup[]> {
-    console.log(`📋 Generating commit groups from ${clusters.length} clusters...`);
+    // Generating commit groups from ${clusters.length} clusters...
     
     const commitGroups: CommitGroup[] = [];
     const processedHunks = new Set<string>();
@@ -867,7 +894,7 @@ export class IntelligentCommitSplitter {
     });
     
     if (remainingHunks.length > 0) {
-      console.log(`📝 Processing ${remainingHunks.length} unprocessed hunks heuristically...`);
+      // Processing ${remainingHunks.length} unprocessed hunks heuristically...
       const remainingFiles = changes.filter(change => 
         change.hunks?.some(hunk => {
           const hunkId = `${hunk.filePath}:${hunk.oldStart}-${hunk.newStart}`;
