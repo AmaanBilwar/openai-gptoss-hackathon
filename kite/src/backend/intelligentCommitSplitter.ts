@@ -373,7 +373,7 @@ export class IntelligentCommitSplitter {
     const clusters = await this.clusterBySimilarity(hunkData);
     
     // Step 3: Generate commit groups from clusters
-    console.log('📋 Generating descriptive commits...');
+    // Generating descriptive commits...
     const commitGroups = await this.generateCommitGroups(changes, clusters);
     
     // Step 4: Generate semantic summary
@@ -513,7 +513,7 @@ export class IntelligentCommitSplitter {
    */
   private async stageHunksInteractively(filePath: string, targetHunks: DiffHunk[]): Promise<void> {
     // Get all unstaged hunks in the file to determine which ones to accept/reject
-    const { stdout: diffOutput } = await execAsync(`git diff --unified=3 ${filePath}`);
+    const { stdout: diffOutput } = await execAsync(`git diff --unified=3 "${filePath}"`);
     const parsedDiff = parse(diffOutput);
     
     if (parsedDiff.length === 0) {
@@ -651,14 +651,38 @@ export class IntelligentCommitSplitter {
 
         if (!stagedFiles.trim()) {
           console.log(`   ⚠️  No changes to commit for group ${group.feature_name}`);
-          continue;
+          console.log(`   🔍 Debug: Group has ${group.hunks.length} hunks, but no staged changes`);
+          console.log(`   🔍 Debug: Group files: ${group.files.map(f => f.file_path).join(', ')}`);
+          
+          // Try to stage the entire files as a fallback
+          console.log(`   🔄 Attempting fallback: staging entire files...`);
+          for (const fileChange of group.files) {
+            const filePath = fileChange.file_path;
+            try {
+              if (fileChange.change_type === 'deleted') {
+                await execAsync(`git rm "${filePath}"`);
+              } else {
+                await execAsync(`git add "${filePath}"`);
+              }
+              console.log(`   ✅ Fallback staged: ${filePath}`);
+            } catch (error) {
+              console.error(`   ❌ Fallback failed for ${filePath}:`, error);
+            }
+          }
+          
+          // Check again if we have staged changes
+          const { stdout: stagedFilesAfterFallback } = await execAsync('git diff --cached --name-only');
+          if (!stagedFilesAfterFallback.trim()) {
+            console.log(`   ❌ Still no changes to commit after fallback for group ${group.feature_name}`);
+            continue;
+          }
         }
 
         // Create commit with title and message
         const commitMessage = `${group.commit_title}\n\n${group.commit_message}`;
         await execAsync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
 
-        console.log(`   ✅ Created hunk-based commit: ${group.commit_title}`);
+        // Created commit: ${group.commit_title}
         successfulCommits++;
 
       } catch (error) {
@@ -722,7 +746,7 @@ export class IntelligentCommitSplitter {
       console.log(`Identified ${commitGroups.length} logical commit groups`);
 
       if (semanticSummary) {
-        console.log(`📝 Semantic analysis summary generated (${semanticSummary.length} chars)`);
+        // Semantic analysis summary generated
       }
 
       // Step 4: Display results
@@ -781,14 +805,12 @@ export class IntelligentCommitSplitter {
       
       processed.add(i);
       
-      // Only create clusters with multiple hunks
-      if (cluster.length > 1) {
-        const avgSimilarity = similarities.length > 0 ? similarities.reduce((a, b) => a + b, 0) / similarities.length : 1.0;
-        clusters.push({ hunks: cluster, avgSimilarity });
-      }
+      // Create clusters for both single and multiple hunks
+      const avgSimilarity = similarities.length > 0 ? similarities.reduce((a, b) => a + b, 0) / similarities.length : 1.0;
+      clusters.push({ hunks: cluster, avgSimilarity });
     }
     
-    console.log(`📊 Found ${clusters.length} similarity clusters`);
+    // Found ${clusters.length} similarity clusters
     return clusters;
   }
 
@@ -851,11 +873,11 @@ export class IntelligentCommitSplitter {
           console.error('❌ Invalid response structure:', response);
           throw new Error('LLM returned invalid response structure');
         }
-        console.log(`✅ Generated: "${content}"`);
+        // Generated: "${content}"
         
         // Increase rate limit delay for Cerebras API
         if (i < clusters.length - 1) {
-          console.log('⏳ Waiting to respect rate limits...');
+          // Waiting to respect rate limits...
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
         
