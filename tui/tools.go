@@ -537,7 +537,7 @@ func GetTools() []ToolDefinition {
 				Parameters  map[string]interface{} `json:"parameters"`
 			}{
 				Name:        "intelligent_commit_split",
-				Description: "Intelligently split uncommitted changes into logical commits using AI analysis. This tool analyzes file changes semantically and groups them into meaningful commits with proper conventional commit messages.",
+				Description: "This is the PRIMARY tool for committing code. Intelligently split uncommitted changes into logical commits using AI analysis. This tool analyzes file changes semantically and groups them into meaningful commits with proper conventional commit messages. Use this when user wants to commit changes. ALWAYS check conversation history for commit message if user provided one. Includes automatic threshold checking and intelligent commit splitting for large changes. If a branch parameter is provided, it will create and switch to that branch before committing. NOTE: Only pushes to remote if user explicitly mentions 'push' - otherwise only commits locally.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -548,6 +548,25 @@ func GetTools() []ToolDefinition {
 						"dry_run": map[string]interface{}{
 							"type":        "boolean",
 							"description": "Whether to only analyze and show what would be done without actually creating commits (default: false)",
+						},
+						"commit_message": map[string]interface{}{
+							"type":        "string",
+							"description": "The commit message to use (optional - if not provided, intelligent commit splitting will generate appropriate messages)",
+						},
+						"branch": map[string]interface{}{
+							"type":        "string",
+							"description": "The branch to create and switch to before committing (optional, uses current branch if not specified)",
+						},
+						"files": map[string]interface{}{
+							"type":        "array",
+							"items": map[string]interface{}{
+								"type": "string",
+							},
+							"description": "List of specific files to commit (optional, commits all changes if not specified)",
+						},
+						"force_intelligent_split": map[string]interface{}{
+							"type":        "boolean",
+							"description": "Force intelligent commit splitting even for small changes (default: false)",
 						},
 					},
 					"required": []string{},
@@ -561,36 +580,12 @@ func GetTools() []ToolDefinition {
 				Description string                 `json:"description"`
 				Parameters  map[string]interface{} `json:"parameters"`
 			}{
-				Name:        "commit_and_push",
-				Description: "Commit and push changes to GitHub. This is the PRIMARY tool for committing and pushing code. Use this when user provides a commit message or wants to push changes. ALWAYS check conversation history for commit message if user provided one. Includes automatic threshold checking and intelligent commit splitting for large changes. If a branch parameter is provided, it will create and switch to that branch before committing.",
+				Name:        "push_to_remote",
+				Description: "Push the current branch to the remote repository. Use this when user asks to push code / commits to remote.",
 				Parameters: map[string]interface{}{
 					"type": "object",
-					"properties": map[string]interface{}{
-						"commit_message": map[string]interface{}{
-							"type":        "string",
-							"description": "The commit message to use (required for regular commits)",
-						},
-						"branch": map[string]interface{}{
-							"type":        "string",
-							"description": "The branch to create and switch to before committing (optional, uses current branch if not specified)",
-						},
-						"files": map[string]interface{}{
-							"type": "array",
-							"items": map[string]interface{}{
-								"type": "string",
-							},
-							"description": "List of specific files to commit (optional, commits all changes if not specified)",
-						},
-						"auto_push": map[string]interface{}{
-							"type":        "boolean",
-							"description": "Whether to automatically push to remote after commit (default: true)",
-						},
-						"force_intelligent_split": map[string]interface{}{
-							"type":        "boolean",
-							"description": "Force intelligent commit splitting even for small changes (default: false)",
-						},
-					},
-					"required": []string{"commit_message"},
+					"properties": map[string]interface{}{},
+					"required": []string{},
 				},
 			},
 		},
@@ -685,6 +680,39 @@ func GetTools() []ToolDefinition {
 				},
 			},
 		},
+		{
+			Type: "function",
+			Function: struct {
+				Name        string                 `json:"name"`
+				Description string                 `json:"description"`
+				Parameters  map[string]interface{} `json:"parameters"`
+			}{
+				Name:        "resolve_merge_conflicts",
+				Description: "Resolve merge conflicts in a specific file or all files under a path. Auto-detects current repository if not specified.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"repo": map[string]interface{}{
+							"type":        "string",
+							"description": "The repository name in 'owner/repo' format (optional, auto-detected from current directory)",
+						},
+						"path": map[string]interface{}{
+							"type":        "string",
+							"description": "File or directory to resolve merge conflicts in (defaults to current directory)",
+						},
+						"preview_only": map[string]interface{}{
+							"type":        "boolean",
+							"description": "If true, do not write files; just compute resolutions",
+						},
+						"explain": map[string]interface{}{
+							"type":        "boolean",
+							"description": "If true, print concise LLM rationales for each resolved conflict",
+						},
+					},
+					"required": []string{},
+				},
+			},
+		},
 	}
 }
 
@@ -741,14 +769,15 @@ func (bc *BackendClient) ExecuteTool(toolName string, parameters map[string]inte
 // IsGitAction checks if a tool call is a git-related action
 func IsGitAction(toolName string) bool {
 	gitTools := map[string]bool{
-		"checkout_branch":          true,
-		"create_branch":            true,
-		"commit_and_push":          true,
-		"intelligent_commit_split": true,
-		"check_changes_threshold":  true,
-		"check_git_status":         true,
-		"check_branch_exists":      true,
-		"list_repository_commits":  true,
+		"checkout_branch":           true,
+		"create_branch":             true,
+		"intelligent_commit_split":  true,
+		"push_to_remote":            true,
+		"check_changes_threshold":   true,
+		"check_git_status":          true,
+		"check_branch_exists":       true,
+		"list_repository_commits":   true,
+		"resolve_merge_conflicts":   true,
 	}
 	return gitTools[toolName]
 }
