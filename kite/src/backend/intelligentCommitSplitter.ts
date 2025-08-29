@@ -568,7 +568,8 @@ export class IntelligentCommitSplitter {
     
     const clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}> = [];
     const processed = new Set<number>();
-    const similarityThreshold = 0.7; // Adjust based on testing
+    // Change similarity threshold to be much less sensitive
+    const similarityThreshold = 0.3; // 30% similarity is enough to group
     
     for (let i = 0; i < hunkData.length; i++) {
       if (processed.has(i)) continue;
@@ -662,17 +663,44 @@ export class IntelligentCommitSplitter {
       
       // Generate commit message using LLM
       const clusterContext = `Cluster ${i + 1}: ${cluster.hunks.length} related hunks with ${(cluster.avgSimilarity * 100).toFixed(1)}% similarity`;
-      const { title, message } = await this.cerebras.generateCommitMessage(groupFiles, `cluster_${i + 1}`, clusterContext);
-      // one second rate limit delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
       
-      commitGroups.push({
-        feature_name: `semantic_cluster_${i + 1}`,
-        description: clusterContext,
-        files: groupFiles,
-        commit_title: title,
-        commit_message: message
-      });
+      try {
+        console.log(`🤖 Generating commit message for cluster ${i + 1}...`);
+        const response = await this.cerebras.generateCommitMessage(groupFiles, `cluster_${i + 1}`, clusterContext);
+        console.log(`📊 Full response structure:`, JSON.stringify(response, null, 2));
+        let content = '';
+        if (response?.title && response?.message) {
+          content = `${response.title}\n\n${response.message}`.trim();
+        } else {
+          console.error('❌ Invalid response structure:', response);
+          throw new Error('LLM returned invalid response structure');
+        }
+        console.log(`✅ Generated: "${content}"`);
+        
+        // Increase rate limit delay for Cerebras API
+        if (i < clusters.length - 1) { // Don't delay after the last one
+          console.log('⏳ Waiting to respect rate limits...');
+          await new Promise(resolve => setTimeout(resolve, 3000)); // 3 seconds
+        }
+        
+        commitGroups.push({
+          feature_name: `semantic_cluster_${i + 1}`,
+          description: clusterContext,
+          files: groupFiles,
+          commit_title: content.split('\n')[0].replace(/^feat:/, '').trim(), // Extract title from LLM response
+          commit_message: content.replace(/^feat:/, '').trim() // Extract message from LLM response
+        });
+      } catch (error) {
+        console.error(`❌ Failed to generate commit message for cluster ${i + 1}:`, error);
+        // Fallback to generic message
+        commitGroups.push({
+          feature_name: `semantic_cluster_${i + 1}`,
+          description: clusterContext,
+          files: groupFiles,
+          commit_title: `feat: cluster_${i + 1}`,
+          commit_message: `Changes related to cluster_${i + 1}`
+        });
+      }
       
       // Mark changes as processed
       changeIndices.forEach(idx => processedChanges.add(idx));
