@@ -408,45 +408,114 @@ export class IntelligentCommitSplitter {
       hunksByFile.get(hunk.filePath)!.push(hunk);
     }
 
-    // Apply hunks for each file
+    // Apply hunks for each file using git add --patch
     for (const [filePath, fileHunks] of hunksByFile) {
-      console.log(`   🔧 Applying ${fileHunks.length} hunks to ${filePath}`);
-      
-      // Create patch content for this file
-      const patchLines = [`--- a/${filePath}`, `+++ b/${filePath}`];
-      
-      for (const hunk of fileHunks) {
-        patchLines.push(hunk.header);
-        patchLines.push(...hunk.content);
-      }
-      
-      const patchContent = patchLines.join('\n');
-      
-      // Write patch to temporary file
-      const tempPatchFile = `/tmp/hunk-patch-${Date.now()}.patch`;
-      fs.writeFileSync(tempPatchFile, patchContent);
+      console.log(`   🔧 Selectively staging ${fileHunks.length} hunks from ${filePath}`);
       
       try {
-        // Apply patch with git apply
-        await execAsync(`git apply --cached "${tempPatchFile}"`);
-        console.log(`   ✅ Applied hunks to ${filePath}`);
+        // Check if file has unstaged changes
+        const { stdout: diffOutput } = await execAsync(`git diff --unified=3 ${filePath}`);
+        
+        if (!diffOutput.trim()) {
+          console.log(`   ⚠️  No unstaged changes in ${filePath}, staging entire file`);
+          await execAsync(`git add "${filePath}"`);
+          continue;
+        }
+
+        // Use git add --patch with automated responses
+        await this.stageHunksInteractively(filePath, fileHunks);
+        console.log(`   ✅ Selectively staged hunks from ${filePath}`);
+        
       } catch (error) {
-        console.error(`   ❌ Error applying patch to ${filePath}:`, error);
-        // Fallback: stage the entire file if patch fails
+        console.error(`   ❌ Error with selective staging for ${filePath}:`, error);
+        // Fallback: stage the entire file if selective staging fails
         console.log(`   🔄 Falling back to staging entire file: ${filePath}`);
         try {
           await execAsync(`git add "${filePath}"`);
         } catch (fallbackError) {
           console.error(`   ❌ Fallback also failed:`, fallbackError);
         }
-      } finally {
-        // Clean up temp file
-        try {
-          fs.unlinkSync(tempPatchFile);
-        } catch (cleanupError) {
-          // Ignore cleanup errors
-        }
       }
+    }
+  }
+
+  /**
+   * Stage specific hunks using git add --patch with automated input
+   */
+  private async stageHunksInteractively(filePath: string, targetHunks: DiffHunk[]): Promise<void> {
+    // Get all unstaged hunks in the file to determine which ones to accept/reject
+    const { stdout: diffOutput } = await execAsync(`git diff --unified=3 ${filePath}`);
+    const parsedDiff = parse(diffOutput);
+    
+    if (parsedDiff.length === 0) {
+      throw new Error(`No unstaged changes found in ${filePath}`);
+    }
+    
+    const file = parsedDiff[0];
+    const allUnstagedHunks = file.chunks;
+    
+    // Create input string for git add --patch
+    // 'y' = yes (stage this hunk), 'n' = no (skip this hunk), 'q' = quit
+    let patchInput = '';
+    
+    for (const hunk of allUnstagedHunks) {
+      // Check if this hunk should be staged by comparing with our target hunks
+      const shouldStage = targetHunks.some(targetHunk => 
+        targetHunk.oldStart === hunk.oldStart && 
+        targetHunk.newStart === hunk.newStart &&
+        targetHunk.oldLines === hunk.oldLines &&
+        targetHunk.newLines === hunk.newLines
+      );
+      
+      patchInput += shouldStage ? 'y\n' : 'n\n';
+    }
+    
+    // Add 'q' to quit at the end
+    patchInput += 'q\n';
+    
+    console.log(`   📝 Patch input for ${filePath}: ${patchInput.replace(/\n/g, ' ')}`);
+    
+    // Execute git add --patch with automated input using spawn for better control
+    try {
+      const { spawn } = require('child_process');
+      
+      await new Promise<void>((resolve, reject) => {
+        const gitProcess = spawn('git', ['add', '--patch', filePath], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: { ...process.env, GIT_EDITOR: 'true' }
+        });
+        
+        // Send automated responses
+        gitProcess.stdin.write(patchInput);
+        gitProcess.stdin.end();
+        
+        let stdout = '';
+        let stderr = '';
+        
+        gitProcess.stdout.on('data', (data: any) => {
+          stdout += data.toString();
+        });
+        
+        gitProcess.stderr.on('data', (data: any) => {
+          stderr += data.toString();
+        });
+        
+        gitProcess.on('close', (code: number | null) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`git add --patch failed with code ${code}. stderr: ${stderr}`));
+          }
+        });
+        
+        gitProcess.on('error', (error: Error) => {
+          reject(error);
+        });
+      });
+      
+    } catch (error) {
+      // If interactive patch fails, fall back to staging entire file
+      throw new Error(`Interactive patch staging failed: ${error}`);
     }
   }
 
