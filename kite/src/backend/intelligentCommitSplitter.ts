@@ -332,7 +332,6 @@ export class IntelligentCommitSplitter {
     const groups: Record<string, FileChange[]> = {};
 
     for (const change of changes) {
-      // Determine group based on file path and type
       const groupKey = this.determineGroupKey(change.file_path);
 
       if (!groups[groupKey]) {
@@ -342,16 +341,15 @@ export class IntelligentCommitSplitter {
       groups[groupKey].push(change);
     }
 
-    // Convert to CommitGroup objects
     const commitGroups: CommitGroup[] = [];
     for (const [groupKey, fileChanges] of Object.entries(groups)) {
-      // Generate commit message using LLM with semantic context
       const { title, message } = await this.cerebras.generateCommitMessage(fileChanges, groupKey, semanticSummary);
 
       commitGroups.push({
         feature_name: groupKey,
         description: `Changes related to ${groupKey}`,
         files: fileChanges,
+        hunks: fileChanges.flatMap(file => file.hunks || []),
         commit_title: title,
         commit_message: message
       });
@@ -398,10 +396,65 @@ export class IntelligentCommitSplitter {
   }
 
   /**
-   * Execute the commit splitting process by creating separate git commits
+   * Apply hunks to create a patch and stage it
+   */
+  private async applyHunks(hunks: DiffHunk[]): Promise<void> {
+    // Group hunks by file
+    const hunksByFile = new Map<string, DiffHunk[]>();
+    for (const hunk of hunks) {
+      if (!hunksByFile.has(hunk.filePath)) {
+        hunksByFile.set(hunk.filePath, []);
+      }
+      hunksByFile.get(hunk.filePath)!.push(hunk);
+    }
+
+    // Apply hunks for each file
+    for (const [filePath, fileHunks] of hunksByFile) {
+      console.log(`   🔧 Applying ${fileHunks.length} hunks to ${filePath}`);
+      
+      // Create patch content for this file
+      const patchLines = [`--- a/${filePath}`, `+++ b/${filePath}`];
+      
+      for (const hunk of fileHunks) {
+        patchLines.push(hunk.header);
+        patchLines.push(...hunk.content);
+      }
+      
+      const patchContent = patchLines.join('\n');
+      
+      // Write patch to temporary file
+      const tempPatchFile = `/tmp/hunk-patch-${Date.now()}.patch`;
+      fs.writeFileSync(tempPatchFile, patchContent);
+      
+      try {
+        // Apply patch with git apply
+        await execAsync(`git apply --cached "${tempPatchFile}"`);
+        console.log(`   ✅ Applied hunks to ${filePath}`);
+      } catch (error) {
+        console.error(`   ❌ Error applying patch to ${filePath}:`, error);
+        // Fallback: stage the entire file if patch fails
+        console.log(`   🔄 Falling back to staging entire file: ${filePath}`);
+        try {
+          await execAsync(`git add "${filePath}"`);
+        } catch (fallbackError) {
+          console.error(`   ❌ Fallback also failed:`, fallbackError);
+        }
+      } finally {
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tempPatchFile);
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+      }
+    }
+  }
+
+  /**
+   * Execute the commit splitting process using hunk-based commits
    */
   private async executeCommitSplitting(commitGroups: CommitGroup[], autoPush: boolean = false): Promise<boolean> {
-    console.log('🎯 Executing commit splitting...');
+    console.log('🎯 Executing hunk-based commit splitting...');
     console.log(`📊 Total commit groups to process: ${commitGroups.length}`);
 
     // Store current branch name
@@ -416,7 +469,7 @@ export class IntelligentCommitSplitter {
     }
 
     // Create a backup branch before making changes
-    const backupBranch = `backup-before-split-${process.pid}`;
+    const backupBranch = `backup-before-split-${Date.now()}`;
     try {
       await execAsync(`git checkout -b ${backupBranch}`);
       await execAsync(`git checkout ${currentBranch}`);
@@ -433,24 +486,25 @@ export class IntelligentCommitSplitter {
       console.log(`\n--- Processing Group ${i + 1}/${commitGroups.length} ---`);
       console.log(`Feature: ${group.feature_name}`);
       console.log(`Title: ${group.commit_title}`);
-      console.log(`Files: ${group.files.map(f => f.file_path)}`);
+      console.log(`Hunks: ${group.hunks.length} hunks across ${[...new Set(group.hunks.map(h => h.filePath))].length} files`);
 
       try {
         // Reset staging area
         await execAsync('git reset');
 
-        // Stage only the files for this group
-        for (const fileChange of group.files) {
-          const filePath = fileChange.file_path;
-
-          if (fileChange.change_type === 'deleted') {
-            // Remove file from git tracking
-            await execAsync(`git rm ${filePath}`);
-            console.log(`   🗑️  Staged deletion: ${filePath}`);
-          } else {
-            // Add file to staging
-            await execAsync(`git add ${filePath}`);
-            console.log(`   ➕ Staged: ${filePath}`);
+        // Apply only the hunks for this group
+        if (group.hunks.length > 0) {
+          await this.applyHunks(group.hunks);
+        } else {
+          console.log(`   ⚠️  No hunks to apply for group ${group.feature_name}, falling back to full files`);
+          // Fallback to staging full files if no hunks
+          for (const fileChange of group.files) {
+            const filePath = fileChange.file_path;
+            if (fileChange.change_type === 'deleted') {
+              await execAsync(`git rm "${filePath}"`);
+            } else {
+              await execAsync(`git add "${filePath}"`);
+            }
           }
         }
 
@@ -464,10 +518,9 @@ export class IntelligentCommitSplitter {
 
         // Create commit with title and message
         const commitMessage = `${group.commit_title}\n\n${group.commit_message}`;
-
         await execAsync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
 
-        console.log(`   ✅ Created commit: ${group.commit_title}`);
+        console.log(`   ✅ Created hunk-based commit: ${group.commit_title}`);
         successfulCommits++;
 
       } catch (error) {
@@ -476,7 +529,7 @@ export class IntelligentCommitSplitter {
       }
     }
 
-    console.log(`\n📊 Commit splitting completed!`);
+    console.log(`\n📊 Hunk-based commit splitting completed!`);
     console.log(`✅ Successfully created ${successfulCommits} commits out of ${commitGroups.length} groups`);
 
     // Push commits if requested
@@ -542,14 +595,10 @@ export class IntelligentCommitSplitter {
         console.log(`   Title: ${group.commit_title}`);
         console.log(`   Description: ${group.commit_message}`);
         console.log(`   Files: ${group.files.map(f => f.file_path)}`);
+        console.log(`   Hunks: ${group.hunks.length} hunks across ${[...new Set(group.hunks.map(h => h.filePath))].length} files`);
       }
 
-      // Step 5: Analysis complete
-
-      // Step 6: Execute if requested
-      if (autoPush) {
-        await this.executeCommitSplitting(commitGroups, autoPush);
-      }
+      await this.executeCommitSplitting(commitGroups, autoPush);
 
       return commitGroups;
 
@@ -639,26 +688,15 @@ export class IntelligentCommitSplitter {
     console.log(`📋 Generating commit groups from ${clusters.length} clusters...`);
     
     const commitGroups: CommitGroup[] = [];
-    const processedChanges = new Set<number>();
+    const processedHunks = new Set<string>();
     
     // Process each cluster
     for (let i = 0; i < clusters.length; i++) {
       const cluster = clusters[i];
       
-      // Group hunks by file for this cluster
-      const fileGroups = new Map<string, DiffHunk[]>();
-      const changeIndices = new Set<number>();
-      
-      for (const hunkInfo of cluster.hunks) {
-        const filePath = hunkInfo.hunk.filePath;
-        if (!fileGroups.has(filePath)) {
-          fileGroups.set(filePath, []);
-        }
-        fileGroups.get(filePath)!.push(hunkInfo.hunk);
-        changeIndices.add(hunkInfo.changeIndex);
-      }
-      
-      // Get the associated FileChange objects
+      // Extract hunks and associated files
+      const clusterHunks = cluster.hunks.map(h => h.hunk);
+      const changeIndices = new Set<number>(cluster.hunks.map(h => h.changeIndex));
       const groupFiles = Array.from(changeIndices).map(idx => changes[idx]);
       
       // Generate commit message using LLM
@@ -678,39 +716,59 @@ export class IntelligentCommitSplitter {
         console.log(`✅ Generated: "${content}"`);
         
         // Increase rate limit delay for Cerebras API
-        if (i < clusters.length - 1) { // Don't delay after the last one
+        if (i < clusters.length - 1) {
           console.log('⏳ Waiting to respect rate limits...');
-          await new Promise(resolve => setTimeout(resolve, 3000)); // 3 seconds
+          await new Promise(resolve => setTimeout(resolve, 3000));
         }
         
         commitGroups.push({
           feature_name: `semantic_cluster_${i + 1}`,
           description: clusterContext,
           files: groupFiles,
-          commit_title: content.split('\n')[0].replace(/^feat:/, '').trim(), // Extract title from LLM response
-          commit_message: content.replace(/^feat:/, '').trim() // Extract message from LLM response
+          hunks: clusterHunks,
+          commit_title: content.split('\n')[0].replace(/^feat:/, '').trim(),
+          commit_message: content.replace(/^feat:/, '').trim()
         });
       } catch (error) {
         console.error(`❌ Failed to generate commit message for cluster ${i + 1}:`, error);
-        // Fallback to generic message
         commitGroups.push({
           feature_name: `semantic_cluster_${i + 1}`,
           description: clusterContext,
           files: groupFiles,
+          hunks: clusterHunks,
           commit_title: `feat: cluster_${i + 1}`,
           commit_message: `Changes related to cluster_${i + 1}`
         });
       }
       
-      // Mark changes as processed
-      changeIndices.forEach(idx => processedChanges.add(idx));
+      // Mark hunks as processed
+      clusterHunks.forEach(hunk => {
+        const hunkId = `${hunk.filePath}:${hunk.oldStart}-${hunk.newStart}`;
+        processedHunks.add(hunkId);
+      });
     }
     
-    // Handle remaining unprocessed changes
-    const remainingChanges = changes.filter((_, idx) => !processedChanges.has(idx));
-    if (remainingChanges.length > 0) {
-      console.log(`📝 Processing ${remainingChanges.length} unprocessed changes heuristically...`);
-      const heuristicGroups = await this.groupChangesHeuristic(remainingChanges);
+    // Handle remaining unprocessed hunks
+    const allHunks = changes.flatMap(change => change.hunks || []);
+    const remainingHunks = allHunks.filter(hunk => {
+      const hunkId = `${hunk.filePath}:${hunk.oldStart}-${hunk.newStart}`;
+      return !processedHunks.has(hunkId);
+    });
+    
+    if (remainingHunks.length > 0) {
+      console.log(`📝 Processing ${remainingHunks.length} unprocessed hunks heuristically...`);
+      const remainingFiles = changes.filter(change => 
+        change.hunks?.some(hunk => {
+          const hunkId = `${hunk.filePath}:${hunk.oldStart}-${hunk.newStart}`;
+          return !processedHunks.has(hunkId);
+        })
+      );
+      
+      const heuristicGroups = await this.groupChangesHeuristic(remainingFiles);
+      // Add remaining hunks to heuristic groups
+      heuristicGroups.forEach(group => {
+        group.hunks = group.files.flatMap(file => file.hunks || []);
+      });
       commitGroups.push(...heuristicGroups);
     }
     
