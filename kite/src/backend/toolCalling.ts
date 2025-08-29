@@ -485,6 +485,18 @@ export class GPTOSSToolCaller {
       {
         type: 'function',
         function: {
+          name: 'push_to_remote',
+          description: 'Push the current branch to the remote repository. Use this when user asks to push code / commits to remote.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'check_changes_threshold',
           description: 'Check if uncommitted changes exceed the threshold (1000 lines) and return analysis of changes.',
           parameters: {
@@ -876,6 +888,22 @@ Instructions:
           repo: parameters['repo']?.split('/')[1] || parameters['repo'],
           branch: parameters['branch']
         });
+      
+      case 'push_to_remote':
+        try {
+          const { stdout } = await this.execAsync('git push');
+          return {
+            success: true,
+            message: 'Successfully pushed commits to remote',
+            output: stdout
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            suggestion: 'Check that you have commits to push and proper remote access'
+          };
+        }
       
       default:
         return {

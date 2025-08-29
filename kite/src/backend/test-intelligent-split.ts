@@ -24,7 +24,7 @@ async function testIntelligentCommitSplit() {
   
   try {
     // Initialize the intelligent commit splitter
-    const splitter = new IntelligentCommitSplitter(supermemoryApiKey, cerebrasApiKey);
+    const splitter = new IntelligentCommitSplitter(cerebrasApiKey);
     
     console.log('🚀 Running intelligent commit splitting analysis...');
     
