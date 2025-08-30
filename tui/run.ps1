@@ -3,7 +3,11 @@
 
 Write-Host "Starting Kite - The Personal Git Assistant..." -ForegroundColor Green
 
-# Check if .env file exists
+# Ensure we run from the script's directory regardless of where it's invoked
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location -LiteralPath $scriptDir
+
+# Check if .env file exists (in script directory)
 if (Test-Path ".env") {
     Write-Host "Found .env file" -ForegroundColor Green
     
@@ -46,13 +50,36 @@ Write-Host "API key found" -ForegroundColor Green
 # Build and run
 try {
     Write-Host "Building application..." -ForegroundColor Blue
-    go build -o cerebras-chat.exe main.go cerebras.go
+    go build -o kite-cli.exe
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Build successful!" -ForegroundColor Green
         Write-Host "Starting chat interface..." -ForegroundColor Blue
         Write-Host ""
-        ./cerebras-chat.exe
+
+        $exePath = Join-Path $scriptDir "kite-cli.exe"
+        if (-not (Test-Path $exePath)) {
+            Write-Host "Executable not found at $exePath" -ForegroundColor Red
+            exit 1
+        }
+
+        # Prefer Windows Terminal fullscreen when available
+        $wt = Get-Command wt.exe -ErrorAction SilentlyContinue
+        if ($wt) {
+            Write-Host "Launching Windows Terminal in fullscreen..." -ForegroundColor Green
+            # Use wt to run the exe directly to avoid nested PowerShell quoting issues
+            Start-Process wt.exe -ArgumentList @(
+                '-F',
+                '--title', 'Kite',
+                '-d', "$scriptDir",
+                "$exePath"
+            ) | Out-Null
+        }
+        else {
+            # Fallback: run the exe directly, maximized
+            Write-Host "Launching app (maximized)..." -ForegroundColor Yellow
+            Start-Process -FilePath "$exePath" -WorkingDirectory "$scriptDir" -WindowStyle Maximized | Out-Null
+        }
     } else {
         Write-Host "Build failed!" -ForegroundColor Red
         exit 1
