@@ -23,12 +23,12 @@ const (
 	kiteAsciiArt = `
 ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                             │
-│    ██╗  ██╗██╗████████╗███████╗    ██╗  ██╗██╗████████╗███████╗    ██╗  ██╗██╗████████╗███████╗          │
-│    ██║ ██╔╝██║╚══██╔══╝██╔════╝    ██║ ██╔╝██║╚══██╔══╝██╔════╝    ██║ ██╔╝██║╚══██╔══╝██╔════╝          │
-│    █████╔╝ ██║   ██║   █████╗      █████╔╝ ██║   ██║   █████╗      █████╔╝ ██║   ██║   █████╗            │
-│    ██╔═██╗ ██║   ██║   ██╔══╝      ██╔═██╗ ██║   ██║   ██╔══╝      ██╔═██╗ ██║   ██║   ██╔══╝            │
-│    ██║  ██╗██║   ██║   ███████╗    ██║  ██╗██║   ██║   ███████╗    ██║  ██╗██║   ██║   ███████╗          │
-│    ╚═╝  ╚═╝╚═╝   ╚═╝   ╚══════╝    ╚═╝  ╚═╝╚═╝   ╚═╝   ╚══════╝    ╚═╝  ╚═╝╚═╝   ╚═╝   ╚══════╝          │
+│                                             ██╗  ██╗██╗████████╗███████╗                                   │
+│                                             ██║ ██╔╝██║╚══██╔══╝██╔════╝                                   │
+│                                             █████╔╝ ██║   ██║   █████╗                                     │
+│                                             ██╔═██╗ ██║   ██║   ██╔══╝                                     │
+│                                             ██║  ██╗██║   ██║   ███████╗                                   │
+│                                             ╚═╝  ╚═╝╚═╝   ╚═╝   ╚══════╝                                   │
 │                                                                                                             │
 │                                    Your Personal Git Assistant                                              │
 │                                                                                                             │
@@ -55,6 +55,7 @@ func (i modelItem) FilterValue() string { return i.title }
 type keyMap struct {
 	Up    key.Binding
 	Down  key.Binding
+	Help  key.Binding
 	Quit  key.Binding
 	Clear key.Binding
 	Tab   key.Binding
@@ -76,12 +77,16 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 var keys = keyMap{
 	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("↑/k", "scroll up"),
+		key.WithKeys("up"),
+		key.WithHelp("↑", "scroll up"),
 	),
 	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("↓/j", "scroll down"),
+		key.WithKeys("down"),
+		key.WithHelp("↓", "scroll down"),
+	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "show help"),
 	),
 	Quit: key.NewBinding(
 		key.WithKeys("q", "esc", "ctrl+c"),
@@ -98,22 +103,10 @@ var keys = keyMap{
 }
 
 // helpText provides comprehensive help information
-var helpText = `# Kite - Your Personal Git Assistant
-
-## Quick Commands
-- **?** or **/help** - Show this help
-- **/clear** - Clear chat history
-- **Ctrl+L** - Clear chat (keyboard shortcut)
-- **exit** or **quit** - Exit the application
-
-## Navigation
-- **↑/k** - Scroll up in chat
-- **↓/j** - Scroll down in chat
-- **Enter** - Send message
-- **Esc** or **Ctrl+C** - Quit application
+func getRenderedHelpText(width int) string {
+	helpText := `# Kite - Your Personal Git Assistant
 
 ## What I Can Do
-I'm an expert GitHub repository management assistant. I can help you with:
 
 ### Git Operations
 - Commit and push changes
@@ -146,6 +139,24 @@ I'm an expert GitHub repository management assistant. I can help you with:
 
 *Type ? anytime to see this help again!*`
 
+	// Use glamour to render the markdown help text
+	if width < 10 {
+		width = 10
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return helpText
+	}
+	out, err := r.Render(helpText)
+	if err != nil {
+		return helpText
+	}
+	return out
+}
+
 // Glamour markdown renderer for CLI responses
 func renderMarkdown(content string) string {
 	if content == "" {
@@ -153,9 +164,10 @@ func renderMarkdown(content string) string {
 	}
 
 	// Create a custom renderer with dark theme and proper width handling
+	// Use a larger width to prevent text cutoff
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(80),
+		glamour.WithWordWrap(120), // Increased from 80 to 120
 	)
 	if err != nil {
 		// Fallback to simple rendering if Glamour fails
@@ -177,9 +189,12 @@ func renderMarkdownWithWidth(content string, width int) string {
 		return content
 	}
 
-	// Ensure minimum width
-	if width < 10 {
-		width = 10
+	// Ensure minimum width and maximum width to prevent issues
+	if width < 20 {
+		width = 20
+	}
+	if width > 150 {
+		width = 150 // Cap maximum width to prevent rendering issues
 	}
 
 	// Create a custom renderer with specified width
@@ -203,6 +218,17 @@ func renderMarkdownWithWidth(content string, width int) string {
 
 // safeSetViewportContent safely sets viewport content with bounds checking
 func (m *model) safeSetViewportContent(content string) {
+	// Only update if content has changed to prevent unnecessary redraws
+	if m.lastViewportContent == content {
+		return
+	}
+
+	// Rate limiting: only update viewport every 100ms to prevent flickering
+	now := time.Now()
+	if now.Sub(m.lastViewportUpdate) < 100*time.Millisecond {
+		return
+	}
+
 	// Ensure viewport has valid dimensions
 	if m.viewport.Width <= 0 {
 		m.viewport.Width = 20
@@ -211,18 +237,21 @@ func (m *model) safeSetViewportContent(content string) {
 		m.viewport.Height = 10
 	}
 
-	// Apply width constraint to prevent overflow
-	maxWidth := m.viewport.Width - 4
-	if maxWidth < 10 {
-		maxWidth = 10
+	// Apply width constraint to prevent overflow, but be less aggressive
+	maxWidth := m.viewport.Width - 2 // Reduced from 4 to 2
+	if maxWidth < 20 {               // Increased minimum from 10 to 20
+		maxWidth = 20
 	}
 
 	// Don't constrain height to allow natural content flow
+	// Also don't constrain width to prevent text cutoff
 	styledContent := lipgloss.NewStyle().
 		Width(maxWidth).
 		Render(content)
 
 	m.viewport.SetContent(styledContent)
+	m.lastViewportContent = content
+	m.lastViewportUpdate = now
 }
 
 // Styles for the beautiful UI
@@ -235,9 +264,9 @@ var (
 
 	// Sidebar styles
 	sidebarStyle = lipgloss.NewStyle().
-			Width(30).
+			Width(28). // Reduced from 30 to 28
 			Height(20).
-			Padding(1, 2).
+			Padding(1, 1). // Reduced padding from 1,2 to 1,1
 			Margin(1, 0, 0, 0).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("#ff6b6b")).
@@ -252,7 +281,7 @@ var (
 
 	// Gradient text for KITE logo
 	kiteLogoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ff6b6b")).
+			Foreground(lipgloss.Color("#ff1493")). // Hot pink color
 			Bold(true).
 			Align(lipgloss.Center).
 			Margin(0, 0, 1, 0)
@@ -301,9 +330,9 @@ var (
 
 	// Right column styles
 	rightColumnStyle = lipgloss.NewStyle().
-				Width(35).
+				Width(32). // Reduced from 35 to 32
 				Height(25).
-				Padding(1, 2).
+				Padding(1, 1). // Reduced padding from 1,2 to 1,1
 				Margin(1, 0, 0, 0).
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("#00b894")).
@@ -341,7 +370,11 @@ func main() {
 	// Ensure console is maximized on Windows (no-op on others)
 	maximizeConsoleWindow()
 
-	p := tea.NewProgram(initialModel())
+	p := tea.NewProgram(
+		initialModel(),
+		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
+	)
 
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
@@ -428,6 +461,11 @@ type model struct {
 	selectedModelIndex int
 	showModelDropdown  bool
 	focus              string // "chat", "model", or "input"
+	// Optimization: track last content to prevent unnecessary updates
+	lastViewportContent string
+
+	// Rate limiting for viewport updates
+	lastViewportUpdate time.Time
 }
 
 func initialModel() model {
@@ -441,7 +479,7 @@ func initialModel() model {
 	ta.SetWidth(30)
 	ta.SetHeight(1)
 
-	// Remove cursor line styling
+	// Remove cursor line styling to reduce flickering
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 
 	ta.ShowLineNumbers = false
@@ -512,11 +550,8 @@ func initialModel() model {
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
-		textarea.Blink,
-		m.spinner.Tick,
 		tea.SetWindowTitle("Kite - Your Personal Git Assistant"),
 		m.checkAuthOnStartup(),
-		tea.EnterAltScreen,
 	)
 }
 
@@ -528,9 +563,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		hpCmd tea.Cmd
 	)
 
+	// Update textarea normally
 	m.textarea, tiCmd = m.textarea.Update(msg)
+
 	m.viewport, vpCmd = m.viewport.Update(msg)
-	m.spinner, spCmd = m.spinner.Update(msg)
+
+	// Only update spinner if it's active to prevent unnecessary redraws
+	if m.isSpinning {
+		m.spinner, spCmd = m.spinner.Update(msg)
+	} else {
+		spCmd = nil
+	}
+
 	m.help, hpCmd = m.help.Update(msg)
 
 	switch msg := msg.(type) {
@@ -541,23 +585,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Calculate layout dimensions with bounds checking
 		// Account for top section height (approximately 15 lines for the wider logo)
 		topSectionHeight := 15
-		sidebarWidth := 30
-		rightColumnWidth := 35
-		chatWidth := msg.Width - sidebarWidth - rightColumnWidth - 8 // Account for padding and borders
+
+		// Account for borders and padding in column widths
+		sidebarWidth := 28 + 4     // 28 content + 2 padding + 2 border
+		rightColumnWidth := 32 + 4 // 32 content + 2 padding + 2 border
+
+		// Calculate available width for chat area
+		chatWidth := msg.Width - sidebarWidth - rightColumnWidth - 8 // Account for app padding and margins
 		chatHeight := msg.Height - topSectionHeight - 10             // Account for top section, input and help text with more padding
 
 		// Ensure minimum dimensions
-		if chatWidth < 20 {
-			chatWidth = 20
+		if chatWidth < 30 { // Increased minimum from 20 to 30
+			chatWidth = 30
 		}
 		if chatHeight < 10 {
 			chatHeight = 10
 		}
 
 		// Update viewport and textarea dimensions
-		m.viewport.Width = chatWidth - 4
+		m.viewport.Width = chatWidth - 2 // Reduced from 4 to 2
 		m.viewport.Height = chatHeight - 4
-		m.textarea.SetWidth(chatWidth - 4)
+		m.textarea.SetWidth(chatWidth - 2) // Reduced from 4 to 2
 		m.help.Width = chatWidth
 
 		if len(m.messages) > 0 {
@@ -637,9 +685,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 				return m, nil
 
-			case "/help", "?":
+			case "?":
 				// Show help
-				renderedHelp := renderMarkdown(helpText)
+				renderedHelp := getRenderedHelpText(m.viewport.Width)
 				m.messages = append(m.messages, botStyle.Render("Kite: ")+renderedHelp)
 				m.safeSetViewportContent(strings.Join(m.messages, "\n"))
 				m.textarea.Reset()
@@ -661,19 +709,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Start streaming response
 			if m.cerebras != nil {
-				m.startSpinner("Kite is cooking...")
+				spinnerCmd := m.startSpinner("Kite is cooking...")
 				m.isStreaming = true
 				m.currentResponse = ""
 				// Add empty bot message that will be filled with streaming content
 				m.messages = append(m.messages, botStyle.Render("Kite: "))
 
-				return m, m.makeAPIRequest()
+				return m, tea.Batch(spinnerCmd, m.makeAPIRequest())
 			} else {
 				// Fallback if Cerebras client is not available
-				m.startSpinner("Cerebras client not available...")
-				return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+				spinnerCmd := m.startSpinner("Cerebras client not available...")
+				return m, tea.Batch(spinnerCmd, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 					return spinnerCompleteMsg{response: "**Error:** Cerebras client not initialized. Please check your `CEREBRAS_API_KEY` environment variable."}
-				})
+				}))
 			}
 		case tea.KeyCtrlL:
 			// Clear chat history and messages
@@ -888,12 +936,14 @@ func (m *model) handleStreaming(responseChan <-chan string, errorChan <-chan err
 	}
 }
 
-func (m *model) startSpinner(message string) {
+func (m *model) startSpinner(message string) tea.Cmd {
 	m.isSpinning = true
 	m.spinnerMsg = message
 	// Cycle to next spinner
 	m.spinnerIdx = (m.spinnerIdx + 1) % len(spinners)
 	m.spinner.Spinner = spinners[m.spinnerIdx]
+	// Start the spinner tick
+	return m.spinner.Tick
 }
 
 func (m *model) stopSpinner() {
@@ -946,8 +996,13 @@ func (m *model) startAuthFlow() tea.Cmd {
 
 // renderTopSection creates the top section with Kite logo only
 func (m model) renderTopSection() string {
-	// Kite Logo with gradient effect
-	kiteLogo := kiteLogoStyle.Render(kiteAsciiArt)
+	// Kite Logo with hot pink color and proper centering
+	kiteLogo := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#ff1493")). // Hot pink color
+		Bold(true).
+		Align(lipgloss.Center).
+		Width(m.width). // Use full width for proper centering
+		Render(kiteAsciiArt)
 
 	return lipgloss.NewStyle().
 		Padding(2, 2).
@@ -968,7 +1023,7 @@ func (m model) renderSidebar() string {
 
 	// Add some quick action buttons or info
 	actions := []string{
-		"• /help - Show help",
+		"• ? - Show help",
 		"• /clear - Clear chat",
 		"• Tab - Switch focus",
 		"• Esc - Quit",
