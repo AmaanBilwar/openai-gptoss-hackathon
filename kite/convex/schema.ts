@@ -36,4 +36,26 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_user_id", ["userId"])
     .index("by_full_name", ["fullName"]),
+
+  activities: defineTable({
+    userId: v.string(), // Clerk user ID
+    sessionId: v.optional(v.string()), // Group related activities
+    toolName: v.string(), // e.g., "create_pull_request", "list_repos"
+    toolCategory: v.string(), // e.g., "github", "ai", "file_ops"
+    status: v.string(), // "started", "completed", "failed"
+    input: v.optional(v.any()), // Tool input parameters (sanitized)
+    output: v.optional(v.any()), // Tool output (sanitized)
+    error: v.optional(v.string()), // Error message if failed
+    executionTimeMs: v.optional(v.number()),
+    timestamp: v.number(),
+    metadata: v.optional(v.object({
+      repository: v.optional(v.string()),
+      pullRequestNumber: v.optional(v.number()),
+      branch: v.optional(v.string()),
+      affectedFiles: v.optional(v.array(v.string())),
+    }))
+  }).index("by_user_id", ["userId"])
+    .index("by_tool_name", ["toolName"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_user_timestamp", ["userId", "timestamp"])
 });

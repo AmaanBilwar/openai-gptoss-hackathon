@@ -60,13 +60,19 @@ app.post('/api/tools/execute', async (req, res) => {
       });
     }
 
-    // Execute the tool
-    const result = await caller.executeTool(tool, parameters);
-    res.json(result);
+    // Execute the tool with activity logging
+    const toolCall = {
+      function: {
+        name: tool,
+        arguments: JSON.stringify(parameters)
+      }
+    };
+    const result = await caller.callTool(toolCall);
+    return res.json(result);
 
   } catch (error) {
     console.error('Tool execution error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
     });
@@ -104,20 +110,20 @@ app.post('/chat', async (req, res) => {
       }
       
       res.write(`data: ${JSON.stringify({ done: true, fullResponse: responseChunks.join('') })}\n\n`);
-      res.end();
+      return res.end();
     } else {
       // Non-streaming response
       const response = await caller.callTools(chatMessages, model);
       const parsedContent = parseMarkdownToText(response);
       
-      res.json({ 
+      return res.json({ 
         response: parsedContent,
         messages: [...chatMessages, { role: 'assistant', content: parsedContent }]
       });
     }
   } catch (error) {
     console.error('Error processing chat request:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       error: 'Failed to process chat request',
       details: error instanceof Error ? error.message : 'Unknown error'
     });

@@ -32,6 +32,7 @@ export default function TacticalDashboard() {
     );
   }
 
+  // Note: Authentication is now handled by middleware, but keeping this as a fallback
   if (!isSignedIn) {
     return (
       <main className="min-h-screen flex items-center justify-center">
