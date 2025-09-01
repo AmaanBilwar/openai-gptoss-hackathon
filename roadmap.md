@@ -10,27 +10,29 @@
 - [x] all functions related to issues - Amaan
 - [x] merge conflicts - Ani
 - [x] add auth to cli (ts backend) - Amaan
+- [x] Save Chats + infinite chat - Amaan
 
 ---
 ## need immediate attention
 
+- [ ] better Agent messages
+
 - [ ] rag commit feature - Vishesh
 
-- [ ] lfs 
+- [ ] lfs
 
 
 - [ ] web dashboard
-    - [ ] sidebar
+    - [x] sidebar
     - [ ] settings page
         - [ ] settings page — take inspo from t3.chat
             - [ ] repo access toggle
             - [ ] max turns (tool calls in a run) toggle  
         - [ ] users  page
         - [ ] activity page  
-    - [ ] login butons
+    - [x] login butons
 
 
-- [ ] Save Chats + infinite chat - Amaan
 
 ---
 ## second in command
