@@ -35,8 +35,6 @@
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -118,10 +116,32 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-color: #171717; /* neutral-900 */
-    color: #ffffff;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
   }
   html {
-    background-color: #171717; /* neutral-900 */
+    background-color: hsl(var(--background));
   }
+}
+
+/* Custom CSS classes for dashboard components */
+.dashboard-button-hover {
+  transition: color 0.2s ease;
+}
+
+.dashboard-button-hover:hover {
+  color: hsl(var(--orange-500)) !important;
+}
+
+.dashboard-nav-item {
+  transition: all 0.2s ease;
+}
+
+.dashboard-nav-item:hover {
+  background-color: hsl(var(--neutral-800));
+  color: hsl(var(--foreground));
+}
+
+.dashboard-user-section:hover {
+  background-color: hsl(var(--neutral-800));
 }
