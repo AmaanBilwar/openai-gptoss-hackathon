@@ -17,8 +17,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize the tool caller and token store
-const caller = new GPTOSSToolCaller();
+// Initialize the token store; callers will be constructed per request to inject user headers
 const tokenStore = new TokenStore();
 
 // Health check endpoint
@@ -70,6 +69,23 @@ app.post('/api/tools/execute', async (req, res) => {
         arguments: JSON.stringify(parameters)
       }
     };
+    const smApiKey = process.env.SUPERMEMORY_API_KEY;
+    // Best-effort user id resolution
+    let smUserId: string | undefined = process.env.CLI_USER_ID;
+    try {
+      const convexClient = await getConvexClientWithAuth();
+      const hasAuth = await tokenStore.getConvexToken();
+      if (hasAuth) {
+        const user = await convexClient.query(api.users.getCurrentUser, {});
+        if (user && (user as any).userId) smUserId = (user as any).userId;
+      }
+    } catch {}
+
+    const caller = new GPTOSSToolCaller('gpt-oss-120b', {
+      supermemoryApiKey: smApiKey,
+      smUserId
+    });
+
     const result = await caller.callTool(toolCall);
     return res.json(result);
 
@@ -85,7 +101,7 @@ app.post('/api/tools/execute', async (req, res) => {
 // Chat endpoint
 app.post('/chat', async (req, res) => {
   try {
-    const { messages, stream = false, model = 'medium' } = req.body;
+    const { messages, stream = false, model = 'medium', userId } = req.body;
     
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: 'Messages array is required' });
@@ -98,6 +114,27 @@ app.post('/chat', async (req, res) => {
     }));
 
     
+    const smApiKey = process.env.SUPERMEMORY_API_KEY;
+    let smUserId: string | undefined = userId as string | undefined;
+    if (!smUserId) {
+      try {
+        const convexClient = await getConvexClientWithAuth();
+        const hasAuth = await tokenStore.getConvexToken();
+        if (hasAuth) {
+          const user = await convexClient.query(api.users.getCurrentUser, {});
+          if (user && (user as any).userId) smUserId = (user as any).userId;
+        }
+      } catch {}
+    }
+    if (!smUserId) {
+      smUserId = process.env.CLI_USER_ID || 'unknown-user';
+    }
+
+    const caller = new GPTOSSToolCaller('gpt-oss-120b', {
+      supermemoryApiKey: smApiKey,
+      smUserId
+    });
+
     if (stream) {
       // Set up SSE for streaming
       res.writeHead(200, {

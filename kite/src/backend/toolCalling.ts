@@ -28,16 +28,22 @@ export class GPTOSSToolCaller {
   private githubClient: GitHubClient;
   private tools: ToolDefinition[];
   private convexClient: ConvexHttpClient;
+  private supermemoryApiKey?: string;
+  private smUserId?: string;
   
-  constructor(modelId: string = 'gpt-oss-120b') {
+  constructor(modelId: string = 'gpt-oss-120b', options?: { supermemoryApiKey?: string; smUserId?: string }) {
     this.modelId = modelId;
     
     // Validate environment configuration
     validateConfig();
     
+    this.supermemoryApiKey = options?.supermemoryApiKey || process.env.SUPERMEMORY_API_KEY;
+    this.smUserId = options?.smUserId;
+
+    // Standard Cerebras client (SDK). When Supermemory is enabled we will bypass the SDK call with fetch.
     this.client = new Cerebras({
       apiKey: CEREBRAS_API_KEY
-    });
+    } as any);
     this.githubClient = new GitHubClient();
     this.convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
     
@@ -1310,12 +1316,12 @@ Instructions:
         console.log(`Turn ${turnCount}: Making API call with ${apiMessages.length} messages`);
         
         // Make API call
-        const response = await this.client.chat.completions.create({
+        const response = await this.createChatCompletion({
           messages: apiMessages,
           model: this.modelId,
-          stream: false, // Disable streaming for multi-turn to handle tool calls properly
+          stream: false,
           max_tokens: 1024,
-          temperature: 0.1, // Lower temperature to reduce creative content generation
+          temperature: 0.1,
           tools: this.tools as any
         });
         
@@ -1437,7 +1443,7 @@ Instructions:
         turnCount++;
         
         // Make API call
-        const response = await this.client.chat.completions.create({
+        const response = await this.createChatCompletion({
           messages: apiMessages,
           model: this.modelId,
           stream: false,
@@ -2155,6 +2161,34 @@ Instructions:
       
       throw error;
     }
+  }
+
+  /**
+   * Create a chat completion, routing via Supermemory proxy when configured
+   */
+  private async createChatCompletion(body: any): Promise<any> {
+    if (!this.supermemoryApiKey) {
+      // Direct SDK call
+      return await (this.client as any).chat.completions.create(body);
+    }
+
+    // Proxy via Supermemory Infinite Chat to Cerebras OpenAI-compatible endpoint
+    const url = 'https://api.supermemory.ai/v3/https://api.cerebras.ai/v1/chat/completions';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CEREBRAS_API_KEY}`,
+        'x-api-key': this.supermemoryApiKey,
+        'x-sm-user-id': this.smUserId || process.env.CLI_USER_ID || 'unknown-user'
+      },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Supermemory proxied request failed: ${res.status} ${res.statusText} ${text}`);
+    }
+    return await res.json();
   }
 }
 
