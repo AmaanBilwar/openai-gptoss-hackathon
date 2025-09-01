@@ -4,30 +4,49 @@ import { useState } from "react";
 import {
   ChevronRight,
   Monitor,
-  Settings,
   Shield,
   Target,
   Users,
   Bell,
   RefreshCw,
 } from "lucide-react";
+import { api } from "../../../convex/_generated/api";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { useUser, SignOutButton } from "@clerk/nextjs";
-import CommandCenterPage from "./command-center/page";
+import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+import CommandCenterPage from "./activity/page";
 import AgentNetworkPage from "./agent-network/page";
 import OperationsPage from "./operations/page";
 import IntelligencePage from "./intelligence/page";
-import SystemsPage from "./systems/page";
+import { useQuery } from "convex/react";
 
-export default function TacticalDashboard() {
+export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("overview");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { isLoaded, isSignedIn, user } = useUser();
+  const userData = useQuery(api.users.getCurrentUser);
+  const router = useRouter();
+
+  // Memoize user data with fallbacks to prevent unnecessary re-renders
+  const displayUserData = useMemo(() => {
+    if (!userData) {
+      return {
+        name: "Loading...",
+        avatar: null,
+      };
+    }
+
+    return {
+      name: userData.name || user?.firstName || "User",
+      avatar: userData.avatar || null,
+    };
+  }, [userData, user]);
 
   if (!isLoaded) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-600">Loading…</div>
+        <div style={{ color: "hsl(var(--neutral-500))" }}>Loading…</div>
       </main>
     );
   }
