@@ -217,10 +217,10 @@ app.post('/api/chats', async (req, res) => {
       }) as any;
     }
 
-    res.json({ success: true, chatId });
+    return res.json({ success: true, chatId });
   } catch (error) {
     console.error('Error creating chat:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -276,10 +276,10 @@ app.post('/api/chats/:chatId/messages', async (req, res) => {
       });
     }
 
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (error) {
     console.error('Error adding message:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -311,10 +311,10 @@ app.get('/api/chats', async (req, res) => {
       chats = await convexClient.query(api.chats.getUserChatsSimple, { userId: userId as string });
     }
 
-    res.json({ success: true, chats });
+    return res.json({ success: true, chats });
   } catch (error) {
     console.error('Error fetching chats:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
@@ -359,10 +359,10 @@ app.get('/api/chats/:chatId', async (req, res) => {
       });
     }
 
-    res.json({ success: true, chat });
+    return res.json({ success: true, chat });
   } catch (error) {
     console.error('Error fetching chat:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
