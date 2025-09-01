@@ -11,6 +11,11 @@ export const getCurrentUser = query({
       name: v.string(),
       email: v.string(),
       avatar: v.optional(v.string()),
+      bio: v.optional(v.string()),
+      location: v.optional(v.string()),
+      followers: v.optional(v.number()),
+      following: v.optional(v.number()),
+      githubUsername: v.optional(v.string()),
       _creationTime: v.number(),
     }),
     v.null()

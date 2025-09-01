@@ -15,6 +15,8 @@ import { CEREBRAS_API_KEY, validateConfig } from './config';
 import { parseMarkdownToText } from './markdownParser';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../../convex/_generated/api";
 
 /**
  * GPT-OSS Tool Caller with Cerebras integration
@@ -25,7 +27,8 @@ export class GPTOSSToolCaller {
   private client: Cerebras;
   private githubClient: GitHubClient;
   private tools: ToolDefinition[];
-
+  private convexClient: ConvexHttpClient;
+  
   constructor(modelId: string = 'gpt-oss-120b') {
     this.modelId = modelId;
     
@@ -36,6 +39,7 @@ export class GPTOSSToolCaller {
       apiKey: CEREBRAS_API_KEY
     });
     this.githubClient = new GitHubClient();
+    this.convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
     
     // Define available tools
     this.tools = [
@@ -713,6 +717,15 @@ Instructions:
 
 
     Reasoning: ${reasoningLevel}`;
+  }
+
+  /**
+   * Internal method to execute tool without logging (used by callTool wrapper)
+   */
+  private async executeToolInternal(toolCall: { function: { name: string; arguments: string } }): Promise<ToolResult> {
+    const toolName = toolCall.function.name;
+    const parameters = JSON.parse(toolCall.function.arguments || '{}');
+    return await this.executeTool(toolName, parameters);
   }
 
   /**
@@ -2032,6 +2045,116 @@ Instructions:
       response += chunk;
     }
     return response;
+  }
+
+  private async logActivity(
+    toolName: string, 
+    status: 'started' | 'completed' | 'failed',
+    options: {
+      input?: any,
+      output?: any, 
+      error?: string,
+      executionTimeMs?: number,
+      sessionId?: string
+    } = {}
+  ) {
+    try {
+      // Log to console for debugging
+      const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] Activity: ${toolName} - ${status}`);
+      
+      // Use CLI activity logging that doesn't require authentication
+      await this.convexClient.mutation(api.activities.logCliActivity, {
+        toolName,
+        toolCategory: this.getCategoryForTool(toolName),
+        status,
+        cliUserId: "cli_user", // Static CLI user for now
+        ...options
+      });
+    } catch (err) {
+      console.warn('Failed to log activity:', err);
+      // Don't let logging failures break tool execution
+    }
+  }
+
+  private getCategoryForTool(toolName: string): string {
+    if (toolName.includes('pull_request') || toolName.includes('repo') || toolName.includes('commit')) {
+      return 'github';
+    }
+    if (toolName.includes('file') || toolName.includes('read') || toolName.includes('write')) {
+      return 'file_ops';
+    }
+    if (toolName.includes('ai') || toolName.includes('generate')) {
+      return 'ai';
+    }
+    return 'other';
+  }
+
+  private generateSessionId(): string {
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private sanitizeInput(input: any): any {
+    try {
+      const parsed = typeof input === 'string' ? JSON.parse(input) : input;
+      // Remove sensitive data like tokens, passwords, etc.
+      const sanitized = { ...parsed };
+      if (sanitized.token) delete sanitized.token;
+      if (sanitized.password) delete sanitized.password;
+      if (sanitized.secret) delete sanitized.secret;
+      return sanitized;
+    } catch {
+      return {};
+    }
+  }
+
+  private sanitizeOutput(output: any): any {
+    try {
+      // Remove sensitive data from output
+      const sanitized = { ...output };
+      if (sanitized.token) delete sanitized.token;
+      if (sanitized.password) delete sanitized.password;
+      if (sanitized.secret) delete sanitized.secret;
+      return sanitized;
+    } catch {
+      return {};
+    }
+  }
+
+  // Wrap each tool execution with logging
+  async callTool(toolCall: { function: { name: string; arguments: string } }): Promise<ToolResult> {
+    const startTime = Date.now();
+    const sessionId = this.generateSessionId();
+    
+    await this.logActivity(toolCall.function.name, 'started', {
+      input: this.sanitizeInput(toolCall.function.arguments),
+      sessionId
+    });
+
+    try {
+      const result = await this.executeToolInternal(toolCall);
+      const executionTime = Date.now() - startTime;
+      
+      await this.logActivity(toolCall.function.name, 'completed', {
+        input: this.sanitizeInput(toolCall.function.arguments),
+        output: this.sanitizeOutput(result),
+        executionTimeMs: executionTime,
+        sessionId
+      });
+      
+      return result;
+    } catch (error: any) {
+      const executionTime = Date.now() - startTime;
+      
+      await this.logActivity(toolCall.function.name, 'failed', {
+        input: this.sanitizeInput(toolCall.function.arguments),
+        error: error?.message || 'Unknown error',
+        executionTimeMs: executionTime,
+        sessionId
+      });
+      
+      throw error;
+    }
   }
 }
 

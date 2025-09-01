@@ -50,7 +50,7 @@ const page = () => {
     }
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-600">Redirecting…</div>
+        <div className="text-gray-600">Redirecting to dashboard...</div>
       </main>
     );
   }
