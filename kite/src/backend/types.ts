@@ -334,6 +334,7 @@ export interface CommitGroup {
   feature_name: string;
   description: string;
   files: FileChange[];
+  hunks: DiffHunk[];
   commit_title: string;
   commit_message: string;
 }
