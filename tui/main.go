@@ -71,6 +71,7 @@ var helpText = `# Kite - Your Personal Git Assistant
 ## Quick Commands
 - **?** or **/help** - Show this help
 - **/clear** - Clear chat history
+- **/history** - View your chat history
 - **Ctrl+L** - Clear chat (keyboard shortcut)
 - **exit** or **quit** - Exit the application
 
@@ -164,6 +165,24 @@ func renderMarkdownWithWidth(content string, width int) string {
 	return out
 }
 
+// generateChatTitle creates a meaningful title from the first user message
+func generateChatTitle(message string) string {
+	// Clean up the message
+	message = strings.TrimSpace(message)
+
+	// If message is too long, truncate it
+	if len(message) > 50 {
+		message = message[:47] + "..."
+	}
+
+	// If message is empty, use a default title
+	if message == "" {
+		return "New Chat"
+	}
+
+	return message
+}
+
 var (
 	textStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 	spinnerStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("69"))
@@ -174,6 +193,12 @@ func main() {
 	// Check if we're running in test mode
 	if len(os.Args) > 1 && os.Args[1] == "test" {
 		testToolCalling()
+		return
+	}
+
+	// Check if we're running in chat persistence test mode
+	if len(os.Args) > 1 && os.Args[1] == "chat-test" {
+		testChatPersistence()
 		return
 	}
 
@@ -234,6 +259,84 @@ func testToolCalling() {
 	fmt.Println("3. Run: go run .")
 }
 
+// testChatPersistence tests the chat persistence functionality
+func testChatPersistence() {
+	fmt.Println("🧪 Testing Chat Persistence...")
+
+	// Test Cerebras client initialization
+	cerebras, err := NewCerebrasClient()
+	if err != nil {
+		log.Printf("❌ Failed to initialize Cerebras client: %v", err)
+		return
+	}
+	fmt.Println("✅ Cerebras client initialized successfully")
+
+	// Test chat creation
+	fmt.Println("\n📝 Testing chat creation...")
+	chatID, err := cerebras.CreateChat("Test Chat", "Hello, this is a test message")
+	if err != nil {
+		log.Printf("❌ Failed to create chat: %v", err)
+		return
+	}
+	fmt.Printf("✅ Chat created successfully with ID: %s\n", chatID)
+
+	// Test adding messages
+	fmt.Println("\n💬 Testing message addition...")
+	err = cerebras.AddMessage("user", "This is a user message")
+	if err != nil {
+		log.Printf("❌ Failed to add user message: %v", err)
+		return
+	}
+	fmt.Println("✅ User message added successfully")
+
+	err = cerebras.AddMessage("assistant", "This is an assistant response")
+	if err != nil {
+		log.Printf("❌ Failed to add assistant message: %v", err)
+		return
+	}
+	fmt.Println("✅ Assistant message added successfully")
+
+	// Test chat history retrieval
+	fmt.Println("\n📚 Testing chat history retrieval...")
+	chats, err := cerebras.GetChatHistory()
+	if err != nil {
+		log.Printf("❌ Failed to get chat history: %v", err)
+		return
+	}
+	fmt.Printf("✅ Retrieved %d chats from history\n", len(chats))
+
+	// Display chat history
+	if len(chats) > 0 {
+		fmt.Println("\n📋 Chat History:")
+		for i, chat := range chats {
+			title := "Untitled"
+			if t, ok := chat["title"].(string); ok {
+				title = t
+			}
+			createdAt := "Unknown"
+			if c, ok := chat["createdAt"].(float64); ok {
+				createdAt = time.Unix(int64(c)/1000, 0).Format("Jan 02, 2006 15:04")
+			}
+			fmt.Printf("  %d. %s - %s\n", i+1, title, createdAt)
+		}
+	}
+
+	// Test loading specific chat
+	if len(chats) > 0 {
+		fmt.Println("\n🔍 Testing chat loading...")
+		if chatID, ok := chats[0]["_id"].(string); ok {
+			chat, err := cerebras.LoadChat(chatID)
+			if err != nil {
+				log.Printf("❌ Failed to load chat: %v", err)
+			} else {
+				fmt.Printf("✅ Chat loaded successfully: %s\n", chat["title"])
+			}
+		}
+	}
+
+	fmt.Println("\n🎉 Chat persistence test completed!")
+}
+
 type (
 	errMsg error
 )
@@ -258,6 +361,8 @@ type model struct {
 	keys            keyMap
 	help            help.Model
 	showHelp        bool
+	chatID          string // Current chat ID for persistence
+	chatTitle       string // Current chat title
 }
 
 func initialModel() model {
@@ -320,6 +425,8 @@ func initialModel() model {
 		keys:            keys,
 		help:            help.New(),
 		showHelp:        false,
+		chatID:          "",
+		chatTitle:       "",
 	}
 }
 
@@ -428,6 +535,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.GotoBottom()
 				return m, nil
 
+			case "/history":
+				// Show chat history
+				if m.cerebras != nil {
+					chats, err := m.cerebras.GetChatHistory()
+					if err != nil {
+						historyMessage := fmt.Sprintf("**Error loading chat history:** %v", err)
+						m.messages = append(m.messages, textStyle.Render("Kite: ")+historyMessage)
+					} else {
+						if len(chats) == 0 {
+							historyMessage := "**No previous chats found.**\n\nStart a conversation to create your first chat!"
+							m.messages = append(m.messages, textStyle.Render("Kite: ")+historyMessage)
+						} else {
+							historyMessage := "**Your Chat History:**\n\n"
+							for i, chat := range chats {
+								title := "Untitled"
+								if t, ok := chat["title"].(string); ok {
+									title = t
+								}
+								createdAt := "Unknown"
+								if c, ok := chat["createdAt"].(float64); ok {
+									createdAt = time.Unix(int64(c)/1000, 0).Format("Jan 02, 2006 15:04")
+								}
+								historyMessage += fmt.Sprintf("%d. **%s** - %s\n", i+1, title, createdAt)
+							}
+							m.messages = append(m.messages, textStyle.Render("Kite: ")+historyMessage)
+						}
+					}
+				} else {
+					historyMessage := "**Chat history not available** - Backend client not initialized."
+					m.messages = append(m.messages, textStyle.Render("Kite: ")+historyMessage)
+				}
+				styledContent := lipgloss.NewStyle().
+					Width(m.viewport.Width - 4).
+					Height(m.viewport.Height).
+					Render(strings.Join(m.messages, "\n"))
+				m.viewport.SetContent(styledContent)
+				m.textarea.Reset()
+				m.viewport.GotoBottom()
+				return m, nil
+
 			case "exit", "quit":
 				// Quit the application
 				return m, tea.Quit
@@ -440,6 +587,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Role:    "user",
 				Content: message,
 			})
+
+			// Create new chat if this is the first message
+			if m.chatID == "" && m.cerebras != nil {
+				// Generate a chat title from the first message
+				title := generateChatTitle(message)
+				m.chatTitle = title
+
+				// Create chat in the database
+				chatID, err := m.cerebras.CreateChat(title, message)
+				if err != nil {
+					log.Printf("Warning: Failed to create chat: %v", err)
+				} else {
+					m.chatID = chatID
+				}
+			} else if m.chatID != "" && m.cerebras != nil {
+				// Save user message to existing chat
+				err := m.cerebras.AddMessage("user", message)
+				if err != nil {
+					log.Printf("Warning: Failed to save user message: %v", err)
+				}
+			}
 
 			// Start streaming response
 			if m.cerebras != nil {
@@ -511,6 +679,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Role:    "assistant",
 				Content: msg.response,
 			})
+
+			// Save assistant message to database
+			if m.chatID != "" && m.cerebras != nil {
+				err := m.cerebras.AddMessage("assistant", msg.response)
+				if err != nil {
+					log.Printf("Warning: Failed to save assistant message: %v", err)
+				}
+			}
 		}
 
 		// Update the last message with the full response (render markdown)

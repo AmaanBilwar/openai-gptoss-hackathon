@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -107,6 +108,7 @@ type CerebrasClient struct {
 	client  *http.Client
 	backend *BackendClient
 	tools   []ToolDefinition
+	chatID  string // Current chat ID for persistence
 }
 
 // NewCerebrasClient creates a new Cerebras client
@@ -140,6 +142,228 @@ func NewCerebrasClient() (*CerebrasClient, error) {
 		backend: backend,
 		tools:   tools,
 	}, nil
+}
+
+// CreateChat creates a new chat session and returns the chat ID
+func (c *CerebrasClient) CreateChat(title string, initialMessage string) (string, error) {
+	if c.backend == nil {
+		return "", fmt.Errorf("backend client not available")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	requestBody := map[string]interface{}{
+		"initialMessage": initialMessage,
+		"userId":         userId,
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := c.backend.client.Post(c.backend.baseURL+"/api/chats", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create chat: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to create chat: %s", string(body))
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		ChatID  string `json:"chatId"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return "", fmt.Errorf("failed to create chat")
+	}
+
+	c.chatID = result.ChatID
+	return result.ChatID, nil
+}
+
+// AddMessage adds a message to the current chat
+func (c *CerebrasClient) AddMessage(role, content string) error {
+	if c.backend == nil {
+		return fmt.Errorf("backend client not available")
+	}
+
+	if c.chatID == "" {
+		return fmt.Errorf("no active chat session")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	requestBody := map[string]interface{}{
+		"role":    role,
+		"content": content,
+		"userId":  userId,
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/chats/%s/messages", c.backend.baseURL, c.chatID)
+	resp, err := c.backend.client.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to add message: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to add message: %s", string(body))
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return fmt.Errorf("failed to add message")
+	}
+
+	return nil
+}
+
+// GetChatHistory retrieves all chats for the current user
+func (c *CerebrasClient) GetChatHistory() ([]map[string]interface{}, error) {
+	if c.backend == nil {
+		return nil, fmt.Errorf("backend client not available")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/chats?userId=%s", c.backend.baseURL, url.QueryEscape(userId))
+	resp, err := c.backend.client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chat history: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get chat history: %s", string(body))
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Chats   []map[string]interface{} `json:"chats"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return nil, fmt.Errorf("failed to get chat history")
+	}
+
+	return result.Chats, nil
+}
+
+// getCurrentUserId fetches the current user ID from the backend
+func (c *CerebrasClient) getCurrentUserId() (string, error) {
+	if c.backend == nil {
+		return "", fmt.Errorf("backend client not available")
+	}
+
+	resp, err := c.backend.client.Get(c.backend.baseURL + "/api/user/current")
+	if err != nil {
+		return "", fmt.Errorf("failed to get current user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to get current user: %s", string(body))
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		User    struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"user"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode user response: %w", err)
+	}
+
+	if !result.Success {
+		return "", fmt.Errorf("failed to get current user")
+	}
+
+	return result.User.ID, nil
+}
+
+// LoadChat loads a specific chat by ID
+func (c *CerebrasClient) LoadChat(chatID string) (map[string]interface{}, error) {
+	if c.backend == nil {
+		return nil, fmt.Errorf("backend client not available")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/chats/%s?userId=%s", c.backend.baseURL, chatID, url.QueryEscape(userId))
+	resp, err := c.backend.client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load chat: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to load chat: %s", string(body))
+	}
+
+	var result struct {
+		Success bool                   `json:"success"`
+		Chat    map[string]interface{} `json:"chat"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return nil, fmt.Errorf("failed to load chat")
+	}
+
+	c.chatID = chatID
+	return result.Chat, nil
 }
 
 // StreamChatCompletion streams a chat completion response

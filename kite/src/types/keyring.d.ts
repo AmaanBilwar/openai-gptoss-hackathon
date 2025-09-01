@@ -1,8 +1,10 @@
 declare module 'keyring' {
-  export class Keyring {
-    constructor(service: string);
-    getPassword(account: string): Promise<string | null>;
-    setPassword(account: string, password: string): Promise<void>;
-    deletePassword(account: string): Promise<boolean>;
+  interface Keyring {
+    setPassword(service: string, account: string, password: string): Promise<void>;
+    getPassword(service: string, account: string): Promise<string | null>;
+    deletePassword(service: string, account: string): Promise<void>;
   }
+
+  const keyring: Keyring;
+  export default keyring;
 }
