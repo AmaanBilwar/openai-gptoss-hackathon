@@ -47,6 +47,51 @@ export default function CLIAuthSuccessPage() {
             throw new Error("Failed to save token");
           }
 
+          // Also obtain a Clerk JWT (Convex template) and save it for backend Convex auth
+          try {
+            const clerkJwtRes = await fetch("/api/cli/get-clerk-token", {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            });
+
+            if (clerkJwtRes.ok) {
+              const { token: convexToken } = await clerkJwtRes.json();
+              if (convexToken) {
+                const saveConvexRes = await fetch(
+                  "/api/cli/save-convex-token",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ token: convexToken }),
+                  }
+                );
+
+                if (!saveConvexRes.ok) {
+                  console.warn("Failed to save Convex token");
+                }
+              }
+            } else {
+              // This can be 404 if Clerk JWT template isn't configured; proceed without failing the flow
+              try {
+                const errData = await clerkJwtRes.json();
+                console.warn(
+                  "Skipping Convex token save:",
+                  errData?.error || errData?.details || clerkJwtRes.statusText
+                );
+              } catch {
+                console.warn(
+                  "Skipping Convex token save: unable to parse response"
+                );
+              }
+            }
+          } catch (e) {
+            console.warn("Error fetching/saving Convex token:", e);
+          }
+
           setIsProcessing(false);
         } else {
           setError(
