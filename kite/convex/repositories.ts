@@ -74,6 +74,31 @@ export const getRepository = query({
   },
 });
 
+// Get repository by full name (owner/repo)
+export const getRepositoryByFullName = query({
+  args: { fullName: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    return await ctx.db
+      .query("repositories")
+      .withIndex("by_full_name", (q) => q.eq("fullName", args.fullName))
+      .first();
+  },
+});
+
+// Get repository by repoId (for internal use)
+export const getRepositoryById = query({
+  args: { repoId: v.number() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("repositories")
+      .withIndex("by_repo_id", (q) => q.eq("repoId", args.repoId))
+      .first();
+  },
+});
+
 // Remove a repository
 export const removeRepository = mutation({
   args: { repositoryId: v.id("repositories") },

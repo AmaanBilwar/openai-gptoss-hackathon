@@ -20,7 +20,18 @@ import {
   ListPullRequestCommitsArgs,
   ListPullRequestFilesArgs,
   CheckPullRequestMergedArgs,
-  UpdatePullRequestBranchArgs
+  UpdatePullRequestBranchArgs,
+  // RAG-specific types
+  GetCommitArgs,
+  GetCommitDiffArgs,
+  GetPRArgs,
+  GetPRFilesArgs,
+  GetPRReviewsArgs,
+  GetPRCommentsArgs,
+  GitHubCommit,
+  GitHubPRFile,
+  GitHubPRReview,
+  GitHubPRComment
 } from './types';
 
 /**
@@ -823,6 +834,317 @@ export class GitHubClient {
         error: error instanceof Error ? error.message : 'Unknown error',
         repo: `${args.owner}/${args.repo}`,
         branch: args.branch
+      };
+    }
+  }
+
+  // RAG-PR SPECIFIC FUNCTIONS
+
+  /**
+   * Get detailed commit information for RAG
+   */
+  async getCommit(args: GetCommitArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: commit } = await octokit.repos.getCommit({
+        owner: args.owner,
+        repo: args.repo,
+        ref: args.sha
+      });
+
+      const commitData: GitHubCommit = {
+        sha: commit.sha,
+        message: commit.commit.message,
+        author: {
+          name: commit.commit.author?.name || 'Unknown',
+          email: commit.commit.author?.email || 'unknown@example.com',
+          date: commit.commit.author?.date || new Date().toISOString()
+        },
+        committer: {
+          name: commit.commit.committer?.name || 'Unknown',
+          email: commit.commit.committer?.email || 'unknown@example.com',
+          date: commit.commit.committer?.date || new Date().toISOString()
+        },
+        parents: commit.parents.map(p => ({ sha: p.sha })),
+        stats: {
+          total: commit.stats?.total || 0,
+          additions: commit.stats?.additions || 0,
+          deletions: commit.stats?.deletions || 0
+        },
+        files: (commit.files || []).map(file => ({
+          filename: file.filename,
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          status: file.status,
+          patch: file.patch
+        }))
+      };
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        sha: args.sha,
+        commit: commitData,
+        result: commitData
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        sha: args.sha
+      };
+    }
+  }
+
+  /**
+   * Get raw patch/diff for a commit
+   */
+  async getCommitDiff(args: GetCommitDiffArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const response = await octokit.request('GET /repos/{owner}/{repo}/commits/{ref}', {
+        owner: args.owner,
+        repo: args.repo,
+        ref: args.sha,
+        headers: {
+          'Accept': 'application/vnd.github.v3.diff'
+        }
+      });
+
+      const diff = response.data as string;
+
+      // Validate that we got a proper diff with at least one hunk header
+      if (!diff.includes('@@')) {
+        return {
+          success: false,
+          error: 'No valid diff content found in commit',
+          repo: `${args.owner}/${args.repo}`,
+          sha: args.sha
+        };
+      }
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        sha: args.sha,
+        diff: diff,
+        diff_length: diff.length,
+        has_hunks: diff.includes('@@'),
+        result: diff
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        sha: args.sha
+      };
+    }
+  }
+
+  /**
+   * Get detailed PR information for RAG
+   */
+  async getPR(args: GetPRArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: pr } = await octokit.pulls.get({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.number
+      });
+
+      const prData = {
+        id: pr.id,
+        number: pr.number,
+        title: pr.title,
+        body: pr.body,
+        state: pr.state,
+        head: {
+          ref: pr.head.ref,
+          sha: pr.head.sha
+        },
+        base: {
+          ref: pr.base.ref,
+          sha: pr.base.sha
+        },
+        user: {
+          login: pr.user.login,
+          id: pr.user.id,
+          name: pr.user.name,
+          email: pr.user.email
+        },
+        created_at: pr.created_at,
+        updated_at: pr.updated_at,
+        html_url: pr.html_url,
+        merged: pr.merged,
+        mergeable: pr.mergeable,
+        mergeable_state: pr.mergeable_state,
+        draft: pr.draft
+      };
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number,
+        pr: prData,
+        result: prData
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number
+      };
+    }
+  }
+
+  /**
+   * Get files changed in a PR with patches
+   */
+  async getPRFiles(args: GetPRFilesArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: files } = await octokit.pulls.listFiles({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.number,
+        per_page: 100
+      });
+
+      const prFiles: GitHubPRFile[] = files.map(file => ({
+        filename: file.filename,
+        status: file.status,
+        additions: file.additions,
+        deletions: file.deletions,
+        changes: file.changes,
+        patch: file.patch,
+        blob_url: file.blob_url,
+        raw_url: file.raw_url,
+        contents_url: file.contents_url
+      }));
+
+      // Validate that we have patches for modified files
+      const filesWithPatches = prFiles.filter(file => file.patch);
+      const modifiedFiles = prFiles.filter(file => file.status === 'modified');
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number,
+        files: prFiles,
+        files_count: prFiles.length,
+        files_with_patches: filesWithPatches.length,
+        modified_files: modifiedFiles.length,
+        result: prFiles
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number
+      };
+    }
+  }
+
+  /**
+   * Get reviews for a PR
+   */
+  async getPRReviews(args: GetPRReviewsArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: reviews } = await octokit.pulls.listReviews({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.number,
+        per_page: 100
+      });
+
+      const prReviews: GitHubPRReview[] = reviews.map(review => ({
+        id: review.id,
+        user: {
+          login: review.user?.login || 'unknown',
+          id: review.user?.id || 0,
+          name: review.user?.name || undefined,
+          email: review.user?.email || undefined
+        },
+        body: review.body,
+        state: review.state,
+        submitted_at: review.submitted_at,
+        commit_id: review.commit_id
+      }));
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number,
+        reviews: prReviews,
+        reviews_count: prReviews.length,
+        result: prReviews
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number
+      };
+    }
+  }
+
+  /**
+   * Get comments for a PR
+   */
+  async getPRComments(args: GetPRCommentsArgs): Promise<ToolResult> {
+    try {
+      const octokit = await this.ensureAuthenticated();
+      
+      const { data: comments } = await octokit.pulls.listReviewComments({
+        owner: args.owner,
+        repo: args.repo,
+        pull_number: args.number,
+        per_page: 100
+      });
+
+      const prComments: GitHubPRComment[] = comments.map(comment => ({
+        id: comment.id,
+        user: {
+          login: comment.user.login,
+          id: comment.user.id,
+          name: comment.user.name,
+          email: comment.user.email
+        },
+        body: comment.body,
+        path: comment.path,
+        line: comment.line,
+        diff_hunk: comment.diff_hunk,
+        created_at: comment.created_at,
+        updated_at: comment.updated_at
+      }));
+
+      return {
+        success: true,
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number,
+        comments: prComments,
+        comments_count: prComments.length,
+        result: prComments
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        repo: `${args.owner}/${args.repo}`,
+        pr_number: args.number
       };
     }
   }

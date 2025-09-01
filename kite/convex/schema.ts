@@ -100,6 +100,7 @@ export default defineSchema({
       v.object({
         additions: v.optional(v.number()),
         deletions: v.optional(v.number()),
+        total: v.optional(v.number()),
         filesChanged: v.optional(v.number()),
       })
     ),
@@ -158,19 +159,24 @@ export default defineSchema({
     repoId: v.number(),
     scope: v.union(
       v.literal("commit_hunk"),
-      v.literal("pr_file"),
+      v.literal("pr_file"), 
       v.literal("pr_comment"),
-      v.literal("commit_msg")
+      v.literal("commit_msg"),
+      v.literal("user_query")  // NEW: Add this scope
     ),
-    // keys to find the source chunk
-    sha: v.optional(v.string()),          // commit sha (for commit_hunk/commit_msg)
-    prNumber: v.optional(v.number()),     // for PR scopes
-    path: v.optional(v.string()),
-    hunkId: v.optional(v.id("hunks")),
+    // For user queries, these fields would be:
+    sha: v.optional(v.string()),          // null for queries
+    prNumber: v.optional(v.number()),     // null for queries  
+    path: v.optional(v.string()),         // null for queries
+    hunkId: v.optional(v.id("hunks")),   // null for queries
+    // NEW: Add query-specific fields
+    queryText: v.optional(v.string()),    // the original query
+    userId: v.optional(v.string()),       // who made the query
+    queryId: v.optional(v.string()),      // unique query identifier
     // vector & text preview
-    embedding: v.array(v.number()),       // e.g., 768-d
+    embedding: v.array(v.number()),
     dim: v.number(),
-    text: v.optional(v.string()),         // short preview/debug
+    text: v.optional(v.string()),
     createdAt: now(),
   }).index("by_repo_scope", ["repoId", "scope"])
     .index("by_repo_pr", ["repoId", "prNumber"]),
@@ -329,5 +335,106 @@ export default defineSchema({
     latencyMs: v.optional(v.number()),
     createdAt: now(),
   }).index("by_tool", ["tool"]),
+
+  // Webhook tracking and processing status
+  webhook_events: defineTable({
+    // track incoming webhook events
+    repoId: v.number(),
+    eventType: v.union(
+      v.literal("push"),
+      v.literal("pull_request"),
+      v.literal("pull_request_review"),
+      v.literal("issue_comment")
+    ),
+    eventId: v.string(), // GitHub event ID
+    deliveryId: v.string(), // GitHub delivery ID
+    payload: v.object({}), // full webhook payload
+    processed: v.boolean(), // whether we've processed this event
+    processingStatus: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    error: v.optional(v.string()),
+    createdAt: now(),
+    processedAt: v.optional(v.number()),
+  }).index("by_repo_event", ["repoId", "eventType"])
+    .index("by_processed", ["processed"])
+    .index("by_status", ["processingStatus"]),
+
+  // Processing queue for commits and PRs
+  processing_queue: defineTable({
+    // queue for embedding processing
+    repoId: v.number(),
+    targetType: v.union(
+      v.literal("commit"),
+      v.literal("pull_request")
+    ),
+    targetId: v.string(), // commit SHA or PR number
+    priority: v.number(), // 1=high, 2=normal, 3=low
+    status: v.union(
+      v.literal("queued"),
+      v.literal("processing"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("retry")
+    ),
+    attempts: v.number(), // number of processing attempts
+    maxAttempts: v.number(), // maximum retry attempts
+    error: v.optional(v.string()),
+    metadata: v.optional(v.object({})), // additional context
+    createdAt: now(),
+    startedAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    nextRetryAt: v.optional(v.number()),
+  }).index("by_status_priority", ["status", "priority"])
+    .index("by_repo_target", ["repoId", "targetType", "targetId"])
+    .index("by_retry", ["nextRetryAt"]),
+
+  // Processing status for commits
+  commit_processing: defineTable({
+    // track embedding processing for commits
+    repoId: v.number(),
+    sha: v.string(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("fetching"),
+      v.literal("parsing"),
+      v.literal("embedding"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    hunkCount: v.optional(v.number()),
+    embeddingCount: v.optional(v.number()),
+    error: v.optional(v.string()),
+    processingTimeMs: v.optional(v.number()),
+    createdAt: now(),
+    updatedAt: now(),
+  }).index("by_repo_sha", ["repoId", "sha"])
+    .index("by_status", ["status"]),
+
+  // Processing status for PRs
+  pr_processing: defineTable({
+    // track embedding processing for PRs
+    repoId: v.number(),
+    number: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("fetching"),
+      v.literal("parsing"),
+      v.literal("embedding"),
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+    commitCount: v.optional(v.number()),
+    hunkCount: v.optional(v.number()),
+    embeddingCount: v.optional(v.number()),
+    error: v.optional(v.string()),
+    processingTimeMs: v.optional(v.number()),
+    createdAt: now(),
+    updatedAt: now(),
+  }).index("by_repo_number", ["repoId", "number"])
+    .index("by_status", ["status"]),
 
 });
