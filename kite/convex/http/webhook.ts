@@ -60,11 +60,27 @@ export const githubWebhook = httpAction(async (ctx, request) => {
     });
 
     // Extract repository information
-    const repoFullName = payload.repository?.full_name;
-    const repoId = payload.repository?.id;
+    const repo = payload.repository;
+    const repoFullName = repo?.full_name;
+    const repoId = repo?.id;
 
     if (!repoFullName || !repoId) {
       return new Response("Invalid repository information", { status: 400 });
+    }
+
+    // Ensure a repositories row exists so actions can resolve by repoId
+    try {
+      await ctx.runMutation(internal.repositories.upsertFromWebhook, {
+        repoId,
+        owner: repo.owner?.login ?? repoFullName.split("/")[0],
+        name: repo.name ?? repoFullName.split("/")[1],
+        fullName: repoFullName,
+        htmlUrl: repo.html_url ?? `https://github.com/${repoFullName}`,
+        private: !!repo.private,
+        defaultBranch: repo.default_branch ?? "main",
+      });
+    } catch (e) {
+      console.warn("Repository upsert from webhook failed (non-fatal)", e);
     }
 
     // Store the webhook event with empty payload (as required by schema)
@@ -81,9 +97,15 @@ export const githubWebhook = httpAction(async (ctx, request) => {
 
     // Process based on event type
     if (eventType === "push") {
-      await handlePushEvent(ctx, payload, repoId, webhookEventId);
+      const queuedCount = await handlePushEvent(ctx, payload, repoId, webhookEventId);
+      if (queuedCount > 0) {
+        await ctx.scheduler.runAfter(0, internal.actions.processQueue.processQueue, {});
+      }
     } else if (eventType === "pull_request") {
-      await handlePullRequestEvent(ctx, payload, repoId, webhookEventId);
+      const queued = await handlePullRequestEvent(ctx, payload, repoId, webhookEventId);
+      if (queued) {
+        await ctx.scheduler.runAfter(0, internal.actions.processQueue.processQueue, {});
+      }
     }
 
     return new Response("OK", { status: 200 });
@@ -107,6 +129,7 @@ async function handlePushEvent(
   
   console.log(`🔄 Processing ${commits.length} commits from push event`);
 
+  let queuedCount = 0;
   for (const commit of commits) {
     const sha = commit.id;
     
@@ -118,8 +141,11 @@ async function handlePushEvent(
       metadata: {} // Empty object as required by schema
     });
 
+    queuedCount += 1;
     console.log(`📋 Queued commit ${sha.substring(0, 8)} for processing`);
   }
+
+  return queuedCount;
 }
 
 /**
@@ -135,9 +161,11 @@ async function handlePullRequestEvent(
   const action = payload.action;
 
   // Only process on certain actions
-  if (!["opened", "synchronize", "reopened"].includes(action)) {
-    console.log(`⏭️ Skipping PR ${pr.number} - action: ${action}`);
-    return;
+  if (!pr || !["opened", "synchronize", "reopened"].includes(action)) {
+    if (pr?.number) {
+      console.log(`⏭️ Skipping PR ${pr.number} - action: ${action}`);
+    }
+    return false;
   }
 
   console.log(`🔄 Processing PR #${pr.number} (${action})`);
@@ -151,4 +179,5 @@ async function handlePullRequestEvent(
   });
 
   console.log(`📋 Queued PR #${pr.number} for processing`);
+  return true;
 }
