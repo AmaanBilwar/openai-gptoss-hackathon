@@ -79,7 +79,10 @@ export async function startInteractiveChat(): Promise<void> {
     console.log(''); // Add spacing after auth success
   }
 
-  const caller = new GPTOSSToolCaller();
+  const caller = new GPTOSSToolCaller('gpt-oss-120b', {
+    supermemoryApiKey: process.env.SUPERMEMORY_API_KEY,
+    smUserId: process.env.CLI_USER_ID || 'cli-user'
+  });
   const messages: ChatMessage[] = [];
 
   console.log('Welcome to Kite! Your AI-powered GitHub assistant.');
