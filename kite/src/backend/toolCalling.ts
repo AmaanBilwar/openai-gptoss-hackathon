@@ -15,6 +15,8 @@ import { CEREBRAS_API_KEY, validateConfig } from './config';
 import { parseMarkdownToText } from './markdownParser';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../../convex/_generated/api";
 
 /**
  * GPT-OSS Tool Caller with Cerebras integration
@@ -25,17 +27,25 @@ export class GPTOSSToolCaller {
   private client: Cerebras;
   private githubClient: GitHubClient;
   private tools: ToolDefinition[];
-
-  constructor(modelId: string = 'gpt-oss-120b') {
+  private convexClient: ConvexHttpClient;
+  private supermemoryApiKey?: string;
+  private smUserId?: string;
+  
+  constructor(modelId: string = 'gpt-oss-120b', options?: { supermemoryApiKey?: string; smUserId?: string }) {
     this.modelId = modelId;
     
     // Validate environment configuration
     validateConfig();
     
+    this.supermemoryApiKey = options?.supermemoryApiKey || process.env.SUPERMEMORY_API_KEY;
+    this.smUserId = options?.smUserId;
+
+    // Standard Cerebras client (SDK). When Supermemory is enabled we will bypass the SDK call with fetch.
     this.client = new Cerebras({
       apiKey: CEREBRAS_API_KEY
-    });
+    } as any);
     this.githubClient = new GitHubClient();
+    this.convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
     
     // Define available tools
     this.tools = [
@@ -450,34 +460,21 @@ export class GPTOSSToolCaller {
         type: 'function',
         function: {
           name: 'intelligent_commit_split',
-          description: 'Intelligently split uncommitted changes into logical commits using AI analysis. This tool analyzes file changes semantically and groups them into meaningful commits with proper conventional commit messages.',
+          description: 'This is the PRIMARY tool for committing code. Intelligently split uncommitted changes into logical commits using AI analysis. This tool analyzes file changes semantically and groups them into meaningful commits with proper conventional commit messages. Use this when user wants to commit changes. ALWAYS check conversation history for commit message if user provided one. Includes automatic threshold checking and intelligent commit splitting for large changes. If a branch parameter is provided, it will create and switch to that branch before committing. NOTE: Only pushes to remote if user explicitly mentions "push" - otherwise only commits locally.',
           parameters: {
             type: 'object',
             properties: {
               auto_push: {
                 type: 'boolean',
-                description: 'Whether to automatically push the commits after splitting (default: false)'
+                description: 'Whether to automatically push the commits after splitting (default: false - only set to true if user explicitly mentions "push")'
               },
               dry_run: {
                 type: 'boolean',
                 description: 'Whether to only analyze and show what would be done without actually creating commits (default: false)'
-              }
-            },
-            required: []
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'commit_and_push',
-          description: 'Commit and push changes to GitHub. This is the PRIMARY tool for committing and pushing code. Use this when user provides a commit message or wants to push changes. ALWAYS check conversation history for commit message if user provided one. Includes automatic threshold checking and intelligent commit splitting for large changes. If a branch parameter is provided, it will create and switch to that branch before committing.',
-          parameters: {
-            type: 'object',
-            properties: {
+              },
               commit_message: {
                 type: 'string',
-                description: 'The commit message to use (required for regular commits)'
+                description: 'The commit message to use (optional - if not provided, intelligent commit splitting will generate appropriate messages)'
               },
               branch: {
                 type: 'string',
@@ -488,16 +485,24 @@ export class GPTOSSToolCaller {
                 items: { type: 'string' },
                 description: 'List of specific files to commit (optional, commits all changes if not specified)'
               },
-              auto_push: {
-                type: 'boolean',
-                description: 'Whether to automatically push to remote after commit (default: true)'
-              },
               force_intelligent_split: {
                 type: 'boolean',
                 description: 'Force intelligent commit splitting even for small changes (default: false)'
               }
             },
-            required: ['commit_message']
+            required: []
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'push_to_remote',
+          description: 'Push the current branch to the remote repository. Use this when user asks to push code / commits to remote.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: []
           }
         }
       },
@@ -619,9 +624,9 @@ CRITICAL: When executing tools, ONLY execute the tool and return the result. DO 
 Instructions:
 - Always use the most appropriate tool for the user's request
 - Be precise with repository names and parameters
-- When user provides a commit message, use commit_and_push tool (not checkout_branch)
-- When user wants to push changes, use commit_and_push tool
-- When user wants to commit and push to a new branch, use commit_and_push tool with branch parameter
+- When user provides a commit message, use intelligent_commit_split tool (not checkout_branch)
+- When user wants to commit changes, use intelligent_commit_split tool
+- When user wants to commit and push to a new branch, use intelligent_commit_split tool with branch parameter
 - Only use checkout_branch when user specifically wants to switch branches without committing
 - ALWAYS check conversation history for commit messages, repository names, and other parameters
 - If user provided information in previous messages, use that information in tool calls
@@ -635,8 +640,9 @@ Instructions:
 - For operations that work on the local workspace (e.g., resolve_merge_conflicts, check_git_status, commit_and_push, intelligent_commit_split), assume the current repository and branch unless the user explicitly specifies others. Ask only if auto-detection fails.
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
 - When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
-- When user asks to "commit and push", use commit_and_push tool, NOT check_changes_threshold or check_git_status
-- When user asks to "commit and push to [branch name]", use commit_and_push tool with branch parameter
+- When user asks to "commit and push", use intelligent_commit_split tool with auto_push=true, NOT check_changes_threshold or check_git_status
+- When user asks to "commit and push to [branch name]", use intelligent_commit_split tool with branch parameter and auto_push=true
+- When user asks to "commit" (without "push"), use intelligent_commit_split tool with auto_push=false
 - Always use the most specific tool for the task - don't use generic tools when specific ones exist
 
 
@@ -667,7 +673,7 @@ Instructions:
      5. Learning from team patterns to improve suggestions
      6. Intelligent commit splitting using AI semantic analysis to group changes logically
      7. Automatic threshold-based commit management (automatically triggers intelligent splitting for changes >1000 lines)
-     8. When using commit_and_push tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
+     8. When using intelligent_commit_split tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
      9. Multi-turn tool use for complex workflows requiring multiple sequential operations
 
     RESPONSE FORMAT:
@@ -687,13 +693,15 @@ Instructions:
 
 
     COMMIT WORKFLOW:
-    - When user says "push code" or "commit and push" → Use commit_and_push tool
-    - When user provides a commit message → Use commit_and_push tool
-    - When user wants to commit and push to a new branch → Use commit_and_push tool with branch parameter
+    - When user says "commit" (without "push") → Use intelligent_commit_split tool with auto_push=false
+    - When user says "push code" or "commit and push" → Use intelligent_commit_split tool with auto_push=true
+    - When user provides a commit message → Use intelligent_commit_split tool with auto_push=false (unless they mention "push")
+    - When user wants to commit and push to a new branch → Use intelligent_commit_split tool with branch parameter and auto_push=true
     - When user wants to switch branches only → Use checkout_branch tool
-    - commit_and_push tool handles branch creation and switching automatically if needed
+    - intelligent_commit_split tool handles branch creation and switching automatically if needed
     - ALWAYS extract commit message from conversation history if user provided one
-    - If user provided commit message in previous messages, use that message in commit_and_push tool
+    - If user provided commit message in previous messages, use that message in intelligent_commit_split tool
+    - IMPORTANT: Only set auto_push=true when user explicitly mentions "push" in their request
 
     MULTI-TURN WORKFLOWS:
     - For complex tasks, you can execute multiple tools in sequence
@@ -708,13 +716,22 @@ Instructions:
     3. If head branch doesn't exist, ask user if they want to create it
     4. Check for uncommitted changes using check_changes_threshold
     5. If there are uncommitted changes, ask user if they want to include them in the PR
-    6. If user wants to include changes, commit them first using commit_and_push
+    6. If user wants to include changes, commit them first using intelligent_commit_split tool with auto_push=false
     7. Create the PR using create_pr
     8. NEVER try to create a PR from a non-existent branch
     9. NEVER make assumptions about branch names - always ask the user
 
 
     Reasoning: ${reasoningLevel}`;
+  }
+
+  /**
+   * Internal method to execute tool without logging (used by callTool wrapper)
+   */
+  private async executeToolInternal(toolCall: { function: { name: string; arguments: string } }): Promise<ToolResult> {
+    const toolName = toolCall.function.name;
+    const parameters = JSON.parse(toolCall.function.arguments || '{}');
+    return await this.executeTool(toolName, parameters);
   }
 
   /**
@@ -904,9 +921,6 @@ Instructions:
       case 'intelligent_commit_split':
         return await this.executeIntelligentCommitSplit(parameters);
       
-      case 'commit_and_push':
-        return await this.executeCommitAndPush(parameters);
-      
       case 'check_changes_threshold':
         return await this.executeCheckChangesThreshold(parameters);
       
@@ -969,6 +983,22 @@ Instructions:
           repo: parameters['repo']?.split('/')[1] || parameters['repo'],
           branch: parameters['branch']
         });
+      
+      case 'push_to_remote':
+        try {
+          const { stdout } = await this.execAsync('git push');
+          return {
+            success: true,
+            message: 'Successfully pushed commits to remote',
+            output: stdout
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            suggestion: 'Check that you have commits to push and proper remote access'
+          };
+        }
       
       default:
         return {
@@ -1161,14 +1191,11 @@ Instructions:
             `${i + 1}. ${group.commit_title}\n   Files: ${group.files.length} file${group.files.length === 1 ? '' : 's'}`
           ).join('\n')}\n\nNo commits were created (dry run mode).`;
         }
-        return `✅ Successfully created ${result.commit_groups_count} logical commits${result.auto_push ? ' and pushed to remote' : ''}`;
-
-      case 'commit_and_push':
-        if (result.action === 'intelligent_split_executed') {
-          return `🚀 Large changes detected (${result.threshold_analysis?.total_changes} lines). Successfully executed intelligent commit splitting.`;
+        if (result.action === 'custom_commit') {
+          const branchInfo = result.branch_created ? `\n🌿 Created and switched to branch: '${result.branch_created}'` : '';
+          return `✅ Successfully committed with custom message: '${result.commit_message}'${branchInfo}${result.pushed ? '\n📤 Pushed to remote' : ''}`;
         }
-        const branchInfo = result.branch_created ? `\n🌿 Created and switched to branch: '${result.branch_created}'` : '';
-        return `✅ Successfully committed changes with message: '${result.commit_message}'${branchInfo}\n${result.pushed ? '📤 Pushed to remote' : '📤 Not pushed (auto_push disabled)'}`;
+        return `✅ Successfully created ${result.commit_groups_count} logical commits${result.auto_push ? ' and pushed to remote' : ''}`;
 
       case 'check_changes_threshold':
         const totalChanges = result.total_changes || 0;
@@ -1289,12 +1316,12 @@ Instructions:
         console.log(`Turn ${turnCount}: Making API call with ${apiMessages.length} messages`);
         
         // Make API call
-        const response = await this.client.chat.completions.create({
+        const response = await this.createChatCompletion({
           messages: apiMessages,
           model: this.modelId,
-          stream: false, // Disable streaming for multi-turn to handle tool calls properly
+          stream: false,
           max_tokens: 1024,
-          temperature: 0.1, // Lower temperature to reduce creative content generation
+          temperature: 0.1,
           tools: this.tools as any
         });
         
@@ -1416,7 +1443,7 @@ Instructions:
         turnCount++;
         
         // Make API call
-        const response = await this.client.chat.completions.create({
+        const response = await this.createChatCompletion({
           messages: apiMessages,
           model: this.modelId,
           stream: false,
@@ -1488,8 +1515,108 @@ Instructions:
    */
   private async executeIntelligentCommitSplit(parameters: Record<string, any>): Promise<ToolResult> {
     try {
+      const commitMessage = parameters.commit_message;
+      const branch = parameters.branch || null;
+      const files = parameters.files || null;
+      const autoPush = parameters.auto_push || false;
+      const dryRun = parameters.dry_run || false;
+
+      // Add file validation
+      if (files) {
+        for (const file of files) {
+          try {
+            await this.execAsync(`git ls-files ${file}`);
+          } catch {
+            return {
+              success: false,
+              error: `File '${file}' not found in repository`,
+              suggestion: 'Check the file path and ensure it exists'
+            };
+          }
+        }
+      }
+
+      // Better branch handling
+      if (branch) {
+        try {
+          // Check if branch already exists
+          const { stdout: existingBranches } = await this.execAsync('git branch --list');
+          if (existingBranches.includes(branch)) {
+            await this.execAsync(`git checkout ${branch}`);
+            console.log(`✅ Switched to existing branch: ${branch}`);
+          } else {
+            await this.execAsync(`git checkout -b ${branch}`);
+            console.log(`✅ Created and switched to branch: ${branch}`);
+          }
+        } catch (branchError) {
+          return {
+            success: false,
+            error: `Failed to handle branch '${branch}': ${branchError}`,
+            suggestion: 'Check if you have the necessary permissions'
+          };
+        }
+      }
+
+      // Check if there are any changes
+      const { stdout: statusOutput } = await this.execAsync('git status --porcelain');
+      if (!statusOutput.trim()) {
+        return {
+          success: false,
+          error: 'No changes to commit',
+          suggestion: 'Make some changes to files before committing'
+        };
+      }
+
+      // If user provided commit message, use direct commit
+      if (commitMessage) {
+        try {
+          // Stage files if specified, otherwise stage all changes
+          if (files) {
+            for (const file of files) {
+              await this.execAsync(`git add ${file}`);
+            }
+          } else {
+            await this.execAsync('git add -A');
+          }
+          
+          // Create commit with user's message
+          await this.execAsync(`git commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
+          
+          // Push if requested
+          if (autoPush) {
+            try {
+              const { stdout } = await this.execAsync('git push');
+            } catch (pushError) {
+              if (pushError instanceof Error && pushError.message.includes('no upstream branch')) {
+                const { stdout: currentBranch } = await this.execAsync('git branch --show-current');
+                const branchName = currentBranch.trim();
+                await this.execAsync(`git push --set-upstream origin ${branchName}`);
+              } else {
+                throw pushError;
+              }
+            }
+          }
+          
+          return {
+            success: true,
+            action: 'custom_commit',
+            commit_message: commitMessage,
+            branch_created: branch,
+            files_committed: files || 'all changes',
+            pushed: autoPush,
+            message: `Successfully committed with custom message: '${commitMessage}'${autoPush ? ' and pushed to remote' : ''}`
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: `Git operation failed: ${error}`,
+            suggestion: 'Check your git configuration and repository state'
+          };
+        }
+      }
+
+      // No commit message provided - use intelligent splitting
       const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
-      
       if (!cerebrasApiKey) {
         return {
           success: false,
@@ -1498,15 +1625,9 @@ Instructions:
         };
       }
       
-      // Initialize the intelligent commit splitter with only cerebrasApiKey
       const splitter = new IntelligentCommitSplitter(cerebrasApiKey);
       
-      const autoPush = parameters.auto_push || false;
-      const dryRun = parameters.dry_run || false;
-      
-      // Run the analysis
       if (dryRun) {
-        // For dry run, we'll just analyze without executing
         const commitGroups = await splitter.runIntelligentSplitting(false);
         return {
           success: true,
@@ -1521,11 +1642,10 @@ Instructions:
           message: `Analysis complete! Found ${commitGroups.length} logical commit groups. No commits were created (dry run mode).`
         };
       } else {
-        // Execute the actual commit splitting
         const commitGroups = await splitter.runIntelligentSplitting(autoPush);
         return {
           success: true,
-          dry_run: false,
+          action: 'intelligent_split',
           auto_push: autoPush,
           commit_groups_count: commitGroups.length,
           commit_groups: commitGroups.map(group => ({
@@ -1534,7 +1654,7 @@ Instructions:
             commit_message: group.commit_message,
             files: group.files.map(f => f.file_path)
           })),
-          message: `Successfully created ${commitGroups.length} logical commits${autoPush ? ' and pushed to remote' : ''}.`
+          message: `Successfully created ${commitGroups.length} logical commits${autoPush ? ' and pushed to remote' : ''}`
         };
       }
       
@@ -1931,6 +2051,144 @@ Instructions:
       response += chunk;
     }
     return response;
+  }
+
+  private async logActivity(
+    toolName: string, 
+    status: 'started' | 'completed' | 'failed',
+    options: {
+      input?: any,
+      output?: any, 
+      error?: string,
+      executionTimeMs?: number,
+      sessionId?: string
+    } = {}
+  ) {
+    try {
+      // Log to console for debugging
+      const timestamp = new Date().toISOString();
+      console.log(`[${timestamp}] Activity: ${toolName} - ${status}`);
+      
+      // Use CLI activity logging that doesn't require authentication
+      await this.convexClient.mutation(api.activities.logCliActivity, {
+        toolName,
+        toolCategory: this.getCategoryForTool(toolName),
+        status,
+        cliUserId: "cli_user", // Static CLI user for now
+        ...options
+      });
+    } catch (err) {
+      console.warn('Failed to log activity:', err);
+      // Don't let logging failures break tool execution
+    }
+  }
+
+  private getCategoryForTool(toolName: string): string {
+    if (toolName.includes('pull_request') || toolName.includes('repo') || toolName.includes('commit')) {
+      return 'github';
+    }
+    if (toolName.includes('file') || toolName.includes('read') || toolName.includes('write')) {
+      return 'file_ops';
+    }
+    if (toolName.includes('ai') || toolName.includes('generate')) {
+      return 'ai';
+    }
+    return 'other';
+  }
+
+  private generateSessionId(): string {
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private sanitizeInput(input: any): any {
+    try {
+      const parsed = typeof input === 'string' ? JSON.parse(input) : input;
+      // Remove sensitive data like tokens, passwords, etc.
+      const sanitized = { ...parsed };
+      if (sanitized.token) delete sanitized.token;
+      if (sanitized.password) delete sanitized.password;
+      if (sanitized.secret) delete sanitized.secret;
+      return sanitized;
+    } catch {
+      return {};
+    }
+  }
+
+  private sanitizeOutput(output: any): any {
+    try {
+      // Remove sensitive data from output
+      const sanitized = { ...output };
+      if (sanitized.token) delete sanitized.token;
+      if (sanitized.password) delete sanitized.password;
+      if (sanitized.secret) delete sanitized.secret;
+      return sanitized;
+    } catch {
+      return {};
+    }
+  }
+
+  // Wrap each tool execution with logging
+  async callTool(toolCall: { function: { name: string; arguments: string } }): Promise<ToolResult> {
+    const startTime = Date.now();
+    const sessionId = this.generateSessionId();
+    
+    await this.logActivity(toolCall.function.name, 'started', {
+      input: this.sanitizeInput(toolCall.function.arguments),
+      sessionId
+    });
+
+    try {
+      const result = await this.executeToolInternal(toolCall);
+      const executionTime = Date.now() - startTime;
+      
+      await this.logActivity(toolCall.function.name, 'completed', {
+        input: this.sanitizeInput(toolCall.function.arguments),
+        output: this.sanitizeOutput(result),
+        executionTimeMs: executionTime,
+        sessionId
+      });
+      
+      return result;
+    } catch (error: any) {
+      const executionTime = Date.now() - startTime;
+      
+      await this.logActivity(toolCall.function.name, 'failed', {
+        input: this.sanitizeInput(toolCall.function.arguments),
+        error: error?.message || 'Unknown error',
+        executionTimeMs: executionTime,
+        sessionId
+      });
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Create a chat completion, routing via Supermemory proxy when configured
+   */
+  private async createChatCompletion(body: any): Promise<any> {
+    if (!this.supermemoryApiKey) {
+      // Direct SDK call
+      return await (this.client as any).chat.completions.create(body);
+    }
+
+    // Proxy via Supermemory Infinite Chat to Cerebras OpenAI-compatible endpoint
+    const url = 'https://api.supermemory.ai/v3/https://api.cerebras.ai/v1/chat/completions';
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CEREBRAS_API_KEY}`,
+        'x-api-key': this.supermemoryApiKey,
+        'x-sm-user-id': this.smUserId || process.env.CLI_USER_ID || 'unknown-user'
+      },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Supermemory proxied request failed: ${res.status} ${res.statusText} ${text}`);
+    }
+    return await res.json();
   }
 }
 

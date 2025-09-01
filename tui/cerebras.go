@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	CerebrasAPIURL = "https://api.cerebras.ai/v1/chat/completions"
+	CerebrasAPIURL = "https://api.supermemory.ai/v3/https://api.cerebras.ai/v1/chat/completions"
 	ModelGPTOSS    = "gpt-oss-120b"
 	SystemPrompt   = "You are Kite, a helpful Git assistant. You help users with Git operations, code reviews, and development tasks. Be concise and practical in your responses."
 )
@@ -107,6 +108,7 @@ type CerebrasClient struct {
 	client  *http.Client
 	backend *BackendClient
 	tools   []ToolDefinition
+	chatID  string // Current chat ID for persistence
 }
 
 // NewCerebrasClient creates a new Cerebras client
@@ -142,6 +144,228 @@ func NewCerebrasClient() (*CerebrasClient, error) {
 	}, nil
 }
 
+// CreateChat creates a new chat session and returns the chat ID
+func (c *CerebrasClient) CreateChat(title string, initialMessage string) (string, error) {
+	if c.backend == nil {
+		return "", fmt.Errorf("backend client not available")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	requestBody := map[string]interface{}{
+		"initialMessage": initialMessage,
+		"userId":         userId,
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := c.backend.client.Post(c.backend.baseURL+"/api/chats", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create chat: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to create chat: %s", string(body))
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		ChatID  string `json:"chatId"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return "", fmt.Errorf("failed to create chat")
+	}
+
+	c.chatID = result.ChatID
+	return result.ChatID, nil
+}
+
+// AddMessage adds a message to the current chat
+func (c *CerebrasClient) AddMessage(role, content string) error {
+	if c.backend == nil {
+		return fmt.Errorf("backend client not available")
+	}
+
+	if c.chatID == "" {
+		return fmt.Errorf("no active chat session")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	requestBody := map[string]interface{}{
+		"role":    role,
+		"content": content,
+		"userId":  userId,
+	}
+
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/chats/%s/messages", c.backend.baseURL, c.chatID)
+	resp, err := c.backend.client.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to add message: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to add message: %s", string(body))
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return fmt.Errorf("failed to add message")
+	}
+
+	return nil
+}
+
+// GetChatHistory retrieves all chats for the current user
+func (c *CerebrasClient) GetChatHistory() ([]map[string]interface{}, error) {
+	if c.backend == nil {
+		return nil, fmt.Errorf("backend client not available")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/chats?userId=%s", c.backend.baseURL, url.QueryEscape(userId))
+	resp, err := c.backend.client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chat history: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to get chat history: %s", string(body))
+	}
+
+	var result struct {
+		Success bool                     `json:"success"`
+		Chats   []map[string]interface{} `json:"chats"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return nil, fmt.Errorf("failed to get chat history")
+	}
+
+	return result.Chats, nil
+}
+
+// getCurrentUserId fetches the current user ID from the backend
+func (c *CerebrasClient) getCurrentUserId() (string, error) {
+	if c.backend == nil {
+		return "", fmt.Errorf("backend client not available")
+	}
+
+	resp, err := c.backend.client.Get(c.backend.baseURL + "/api/user/current")
+	if err != nil {
+		return "", fmt.Errorf("failed to get current user: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to get current user: %s", string(body))
+	}
+
+	var result struct {
+		Success bool `json:"success"`
+		User    struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Type string `json:"type"`
+		} `json:"user"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode user response: %w", err)
+	}
+
+	if !result.Success {
+		return "", fmt.Errorf("failed to get current user")
+	}
+
+	return result.User.ID, nil
+}
+
+// LoadChat loads a specific chat by ID
+func (c *CerebrasClient) LoadChat(chatID string) (map[string]interface{}, error) {
+	if c.backend == nil {
+		return nil, fmt.Errorf("backend client not available")
+	}
+
+	// Get user ID from backend
+	userId, err := c.getCurrentUserId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user ID: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/api/chats/%s?userId=%s", c.backend.baseURL, chatID, url.QueryEscape(userId))
+	resp, err := c.backend.client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load chat: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to load chat: %s", string(body))
+	}
+
+	var result struct {
+		Success bool                   `json:"success"`
+		Chat    map[string]interface{} `json:"chat"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.Success {
+		return nil, fmt.Errorf("failed to load chat")
+	}
+
+	c.chatID = chatID
+	return result.Chat, nil
+}
+
 // StreamChatCompletion streams a chat completion response
 func (c *CerebrasClient) StreamChatCompletion(messages []CerebrasMessage, responseChan chan<- string, errorChan chan<- error) {
 	defer close(responseChan)
@@ -154,20 +378,12 @@ func (c *CerebrasClient) StreamChatCompletion(messages []CerebrasMessage, respon
 
 CRITICAL: When executing tools, ONLY execute the tool and return the result. DO NOT add any additional commentary, explanations, or text after tool execution. The tool results are complete and self-explanatory. If you need to use a tool, do not include any text content in your response - only use the tool. NEVER generate text content when using tools - only call the tool and stop. IMPORTANT: When you use a tool, do not write any text in the content field - only make the tool call.
 
-When the user greets you, respond with "Hello, I'm Kite, your personal git assistant. How may I help you today?"
-
-When the user asks you what you can do, respond with "I'm an expert GitHub repository management assistant. I can solve merge conflicts, split your commits intelligently, and you can ask me questions about basically anything."
-
-When the user asks you "Who made you" or "Who built you", respond with "I was built by three goats with personal problems with Git."
-
-When a user asks you "How were you built", "How does Kite work", "What happens in the backend", "How are you implemented", "What technologies power you", or any technical questions about the development or backend of Kite, respond with "You're trying to get me into trouble aren't you"
-
 Instructions:
 - Always use the most appropriate tool for the user's request
 - Be precise with repository names and parameters
-- When user provides a commit message, use commit_and_push tool (not checkout_branch)
-- When user wants to push changes, use commit_and_push tool
-- When user wants to commit and push to a new branch, use commit_and_push tool with branch parameter
+- When user provides a commit message, use intelligent_commit_split tool (not checkout_branch)
+- When user wants to commit changes, use intelligent_commit_split tool
+- When user wants to commit and push to a new branch, use intelligent_commit_split tool with branch parameter
 - Only use checkout_branch when user specifically wants to switch branches without committing
 - ALWAYS check conversation history for commit messages, repository names, and other parameters
 - If user provided information in previous messages, use that information in tool calls
@@ -177,11 +393,13 @@ Instructions:
 - DO NOT provide additional commentary after tool execution unless specifically requested by the user
 - DO NOT use list_repos unless user specifically asks to see all repositories
 - When user asks to create something (PR, issue, branch), ask for required information instead of listing repositories
-- NEVER assume branch names, repository names, or any other parameters - always ask the user
+- DEFAULTS (CLI): Auto-detect current repository and branch from the local git context and use them by default. Do NOT ask the user for repo/branch if detection succeeds.
+- For operations that work on the local workspace (e.g., resolve_merge_conflicts, check_git_status, commit_and_push, intelligent_commit_split), assume the current repository and branch unless the user explicitly specifies others. Ask only if auto-detection fails.
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
 - When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
-- When user asks to "commit and push", use commit_and_push tool, NOT check_changes_threshold or check_git_status
-- When user asks to "commit and push to [branch name]", use commit_and_push tool with branch parameter
+- When user asks to "commit and push", use intelligent_commit_split tool with auto_push=true, NOT check_changes_threshold or check_git_status
+- When user asks to "commit and push to [branch name]", use intelligent_commit_split tool with branch parameter and auto_push=true
+- When user asks to "commit" (without "push"), use intelligent_commit_split tool with auto_push=false
 - Always use the most specific tool for the task - don't use generic tools when specific ones exist
 
 
@@ -212,7 +430,7 @@ Instructions:
      5. Learning from team patterns to improve suggestions
      6. Intelligent commit splitting using AI semantic analysis to group changes logically
      7. Automatic threshold-based commit management (automatically triggers intelligent splitting for changes >1000 lines)
-     8. When using commit_and_push tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
+     8. When using intelligent_commit_split tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
      9. Multi-turn tool use for complex workflows requiring multiple sequential operations
 
     RESPONSE FORMAT:
@@ -232,13 +450,15 @@ Instructions:
 
 
     COMMIT WORKFLOW:
-    - When user says "push code" or "commit and push" → Use commit_and_push tool
-    - When user provides a commit message → Use commit_and_push tool
-    - When user wants to commit and push to a new branch → Use commit_and_push tool with branch parameter
+    - When user says "commit" (without "push") → Use intelligent_commit_split tool with auto_push=false
+    - When user says "push code" or "commit and push" → Use intelligent_commit_split tool with auto_push=true
+    - When user provides a commit message → Use intelligent_commit_split tool with auto_push=false (unless they mention "push")
+    - When user wants to commit and push to a new branch → Use intelligent_commit_split tool with branch parameter and auto_push=true
     - When user wants to switch branches only → Use checkout_branch tool
-    - commit_and_push tool handles branch creation and switching automatically if needed
+    - intelligent_commit_split tool handles branch creation and switching automatically if needed
     - ALWAYS extract commit message from conversation history if user provided one
-    - If user provided commit message in previous messages, use that message in commit_and_push tool
+    - If user provided commit message in previous messages, use that message in intelligent_commit_split tool
+    - IMPORTANT: Only set auto_push=true when user explicitly mentions "push" in their request
 
     MULTI-TURN WORKFLOWS:
     - For complex tasks, you can execute multiple tools in sequence
@@ -253,7 +473,7 @@ Instructions:
     3. If head branch doesn't exist, ask user if they want to create it
     4. Check for uncommitted changes using check_changes_threshold
     5. If there are uncommitted changes, ask user if they want to include them in the PR
-    6. If user wants to include changes, commit them first using commit_and_push
+    6. If user wants to include changes, commit them first using intelligent_commit_split tool with auto_push=false
     7. Create the PR using create_pr
     8. NEVER try to create a PR from a non-existent branch
     9. NEVER make assumptions about branch names - always ask the user`,
@@ -359,9 +579,9 @@ When a user asks you "How were you built", "How does Kite work", "What happens i
 Instructions:
 - Always use the most appropriate tool for the user's request
 - Be precise with repository names and parameters
-- When user provides a commit message, use commit_and_push tool (not checkout_branch)
-- When user wants to push changes, use commit_and_push tool
-- When user wants to commit and push to a new branch, use commit_and_push tool with branch parameter
+- When user provides a commit message, use intelligent_commit_split tool (not checkout_branch)
+- When user wants to push changes, use intelligent_commit_split tool
+- When user wants to commit and push to a new branch, use intelligent_commit_split tool with branch parameter
 - Only use checkout_branch when user specifically wants to switch branches without committing
 - ALWAYS check conversation history for commit messages, repository names, and other parameters
 - If user provided information in previous messages, use that information in tool calls
@@ -374,8 +594,8 @@ Instructions:
 - NEVER assume branch names, repository names, or any other parameters - always ask the user
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
 - When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
-- When user asks to "commit and push", use commit_and_push tool, NOT check_changes_threshold or check_git_status
-- When user asks to "commit and push to [branch name]", use commit_and_push tool with branch parameter
+- When user asks to "commit and push", use intelligent_commit_split tool, NOT check_changes_threshold or check_git_status
+- When user asks to "commit and push to [branch name]", use intelligent_commit_split tool with branch parameter
 - Always use the most specific tool for the task - don't use generic tools when specific ones exist
 
 COMMUNICATION STYLE:
@@ -404,7 +624,7 @@ CORE CAPABILITIES:
 5. Learning from team patterns to improve suggestions
 6. Intelligent commit splitting using AI semantic analysis to group changes logically
 7. Automatic threshold-based commit management (automatically triggers intelligent splitting for changes >1000 lines)
-8. When using commit_and_push tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
+8. When using intelligent_commit_split tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
 9. Multi-turn tool use for complex workflows requiring multiple sequential operations
 
 RESPONSE FORMAT:
@@ -423,13 +643,13 @@ If the user request is not a git related operation, respond with a helpful messa
 Always use available tools for Git operations and maintain audit logs for continuous learning and improvement.
 
 COMMIT WORKFLOW:
-- When user says "push code" or "commit and push" → Use commit_and_push tool
-- When user provides a commit message → Use commit_and_push tool
-- When user wants to commit and push to a new branch → Use commit_and_push tool with branch parameter
+- When user says "push code" or "commit and push" → Use intelligent_commit_split tool
+- When user provides a commit message → Use intelligent_commit_split tool
+- When user wants to commit and push to a new branch → Use intelligent_commit_split tool with branch parameter
 - When user wants to switch branches only → Use checkout_branch tool
-- commit_and_push tool handles branch creation and switching automatically if needed
+- intelligent_commit_split tool handles branch creation and switching automatically if needed
 - ALWAYS extract commit message from conversation history if user provided one
-- If user provided commit message in previous messages, use that message in commit_and_push tool
+- If user provided commit message in previous messages, use that message in intelligent_commit_split tool
 
 MULTI-TURN WORKFLOWS:
 - For complex tasks, you can execute multiple tools in sequence
@@ -444,7 +664,7 @@ PULL REQUEST WORKFLOW:
 3. If head branch doesn't exist, ask user if they want to create it
 4. Check for uncommitted changes using check_changes_threshold
 5. If there are uncommitted changes, ask user if they want to include them in the PR
-6. If user wants to include changes, commit them first using commit_and_push
+6. If user wants to include changes, commit them first using intelligent_commit_split
 7. Create the PR using create_pr
 8. NEVER try to create a PR from a non-existent branch
 9. NEVER make assumptions about branch names - always ask the user`,
@@ -600,10 +820,10 @@ func formatToolResult(toolName string, result *ToolResult) string {
 	switch toolName {
 	case "check_git_status":
 		return "📋 Git status checked successfully"
-	case "commit_and_push":
-		return "✅ Changes committed and pushed successfully"
 	case "intelligent_commit_split":
 		return "🚀 Intelligent commit splitting completed"
+	case "push_to_remote":
+		return "🚀 Changes pushed to remote successfully"
 	case "check_changes_threshold":
 		return "📊 Changes threshold analysis completed"
 	default:
