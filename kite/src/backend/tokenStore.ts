@@ -2,19 +2,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { TokenData } from './types';
-// import { Keyring } from 'keyring'
   
 /**
  * TokenStore handles persistence of GitHub OAuth tokens and Convex tokens
- * Uses OS keyring when available, falls back to file storage
+ * Uses local file storage for simplicity
  */
 export class TokenStore {
   private readonly serviceName: string;
   private readonly filename: string;
   private readonly convexServiceName: string;
   private readonly convexFilename: string;
-  private keyring: any = null;
-  private keyringInitialized: boolean = false;
 
   constructor(serviceName: string = 'gh_oauth_cli', filename: string = '.gh_oauth_token') {
     this.serviceName = serviceName;

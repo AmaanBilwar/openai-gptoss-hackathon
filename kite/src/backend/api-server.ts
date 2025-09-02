@@ -4,7 +4,6 @@ import express from 'express';
 import cors from 'cors';
 import { GPTOSSToolCaller } from './toolCalling';
 import { TokenStore } from './tokenStore';
-import { parseMarkdownToText } from './markdownParser';
 import { ChatMessage } from './types';
 import { validateConfig } from './config';
 import { ConvexHttpClient } from "convex/browser";
