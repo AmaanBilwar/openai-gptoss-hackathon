@@ -1,12 +1,29 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { useUser, SignOutButton, SignInButton } from "@clerk/nextjs";
+import {
+  useUser,
+  SignOutButton,
+  SignInButton,
+  useClerk,
+  useReverification,
+} from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 import {
@@ -25,14 +42,19 @@ import {
   Users,
   Github,
   DollarSignIcon,
+  Trash2,
 } from "lucide-react";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("profile");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const router = useRouter();
 
-  // Get Clerk user state
+  // Get Clerk user state and clerk instance
   const { isLoaded: clerkLoaded, isSignedIn, user: clerkUser } = useUser();
+  const { signOut } = useClerk();
+  const deleteUserFromClerk = useReverification((user) => user?.delete());
 
   // Get theme functionality
   const { theme, setTheme } = useTheme();
