@@ -36,7 +36,6 @@ const nextConfig: NextConfig = {
         'request': 'commonjs request',
       });
     }
-
     return config;
   },
   // Ensure API routes are server-side only

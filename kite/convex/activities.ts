@@ -26,75 +26,24 @@ export const logActivity = mutation({
   },
 });
 
-// Log CLI activity (for unauthenticated CLI usage)
-export const logCliActivity = mutation({
-  args: {
-    sessionId: v.optional(v.string()),
-    toolName: v.string(),
-    toolCategory: v.string(),
-    status: v.string(),
-    input: v.optional(v.any()),
-    output: v.optional(v.any()),
-    error: v.optional(v.string()),
-    executionTimeMs: v.optional(v.number()),
-    metadata: v.optional(v.any()),
-    cliUserId: v.optional(v.string()) // Optional CLI user identifier
-  },
-  handler: async (ctx, args) => {
-    // For CLI usage, we'll create activities without authentication
-    // This allows us to track CLI tool usage in the dashboard
-    
-    const { cliUserId, ...activityData } = args;
-    
-    return await ctx.db.insert("activities", {
-      userId: cliUserId || "cli_user", // Default CLI user ID
-      ...activityData,
-      timestamp: Date.now(),
-    });
-  },
-});
-
 // Get recent activities for dashboard
 export const getRecentActivities = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    
-    try {
-      if (!identity) {
-        // For unauthenticated users, show CLI activities
-        return await ctx.db
-          .query("activities")
-          .withIndex("by_user_timestamp", (q) => 
-            q.eq("userId", "cli_user")
-          )
-          .order("desc")
-          .take(args.limit || 50);
-      }
+    if (!identity) throw new Error("Not authenticated");
 
-      // For authenticated users, show their activities + CLI activities
+    try {
+      // For authenticated users, show their activities
       const userActivities = await ctx.db
         .query("activities")
         .withIndex("by_user_timestamp", (q) => 
           q.eq("userId", identity.subject)
         )
         .order("desc")
-        .take(args.limit || 25);
+        .take(args.limit || 50);
         
-      const cliActivities = await ctx.db
-        .query("activities")
-        .withIndex("by_user_timestamp", (q) => 
-          q.eq("userId", "cli_user")
-        )
-        .order("desc")
-        .take(args.limit || 25);
-        
-      // Merge and sort by timestamp
-      const allActivities = [...userActivities, ...cliActivities]
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, args.limit || 50);
-        
-      return allActivities;
+      return userActivities;
     } catch (error) {
       console.error("Error fetching activities:", error);
       return [];
@@ -107,30 +56,14 @@ export const getActivityStats = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
 
     try {
-      let activities = [];
-      
-      if (!identity) {
-        // For unauthenticated users, show CLI activities
-        activities = await ctx.db
-          .query("activities")
-          .withIndex("by_user_id", (q) => q.eq("userId", "cli_user"))
-          .collect();
-      } else {
-        // For authenticated users, combine their activities + CLI activities
-        const userActivities = await ctx.db
-          .query("activities")
-          .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-          .collect();
-          
-        const cliActivities = await ctx.db
-          .query("activities")
-          .withIndex("by_user_id", (q) => q.eq("userId", "cli_user"))
-          .collect();
-          
-        activities = [...userActivities, ...cliActivities];
-      }
+      // For authenticated users, get their activities
+      const activities = await ctx.db
+        .query("activities")
+        .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
+        .collect();
 
       const total = activities.length;
       const successful = activities.filter(a => a.status === "completed").length;

@@ -12,7 +12,7 @@ import {
   CerebrasResponse
 } from './types';
 import { CEREBRAS_API_KEY, validateConfig } from './config';
-import { parseMarkdownToText } from './markdownParser';
+
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { ConvexHttpClient } from "convex/browser";
@@ -621,11 +621,23 @@ export class GPTOSSToolCaller {
 
 CRITICAL: When executing tools, ONLY execute the tool and return the result. DO NOT add any additional commentary, explanations, or text after tool execution. The tool results are complete and self-explanatory. If you need to use a tool, do not include any text content in your response - only use the tool. NEVER generate text content when using tools - only call the tool and stop. IMPORTANT: When you use a tool, do not write any text in the content field - only make the tool call.
 
+IMPORTANT: DO NOT USE TOOLS for simple greetings or questions about what you can do.
+
+When the user greets you (says "hi", "hello", "hey", etc.), respond with "Hello, I'm Kite, your personal git assistant. How may I help you today?" - DO NOT use any tools.
+
+When the user asks you what you can do, respond with "I'm an expert GitHub repository management assistant. I can solve merge conflicts, split your commits intelligently, and you can ask me questions about basically anything." - DO NOT use any tools.
+
+When the user asks you "Who made you" or "Who built you", respond with "I was built by three goats with personal problems with Git." - DO NOT use any tools.
+
+When a user asks you "How were you built", "How does Kite work", "What happens in the backend", "How are you implemented", "What technologies power you", or any technical questions about the development or backend of Kite, respond with "You're trying to get me into trouble aren't you" - DO NOT use any tools.
+
+ONLY use tools when the user explicitly requests a GitHub operation (commit, push, create PR, etc.).
+
 Instructions:
 - Always use the most appropriate tool for the user's request
 - Be precise with repository names and parameters
 - When user provides a commit message, use intelligent_commit_split tool (not checkout_branch)
-- When user wants to commit changes, use intelligent_commit_split tool
+- When user wants to push changes, use intelligent_commit_split tool
 - When user wants to commit and push to a new branch, use intelligent_commit_split tool with branch parameter
 - Only use checkout_branch when user specifically wants to switch branches without committing
 - ALWAYS check conversation history for commit messages, repository names, and other parameters
@@ -636,93 +648,85 @@ Instructions:
 - DO NOT provide additional commentary after tool execution unless specifically requested by the user
 - DO NOT use list_repos unless user specifically asks to see all repositories
 - When user asks to create something (PR, issue, branch), ask for required information instead of listing repositories
-- DEFAULTS (CLI): Auto-detect current repository and branch from the local git context and use them by default. Do NOT ask the user for repo/branch if detection succeeds.
-- For operations that work on the local workspace (e.g., resolve_merge_conflicts, check_git_status, commit_and_push, intelligent_commit_split), assume the current repository and branch unless the user explicitly specifies others. Ask only if auto-detection fails.
+- NEVER assume branch names, repository names, or any other parameters - always ask the user
 - Follow the exact workflow steps in order - do not skip steps or make assumptions
 - When user asks to "merge the open pr" or "merge pr", use list_pull_requests to find open PRs, then use merge_pr
-- When user asks to "commit and push", use intelligent_commit_split tool with auto_push=true, NOT check_changes_threshold or check_git_status
-- When user asks to "commit and push to [branch name]", use intelligent_commit_split tool with branch parameter and auto_push=true
-- When user asks to "commit" (without "push"), use intelligent_commit_split tool with auto_push=false
+- When user asks to "commit and push", use intelligent_commit_split tool, NOT check_changes_threshold or check_git_status
+- When user asks to "commit and push to [branch name]", use intelligent_commit_split tool with branch parameter
 - Always use the most specific tool for the task - don't use generic tools when specific ones exist
 
+COMMUNICATION STYLE:
+- Be very concise
+- Always prioritize safety - confirm before doing destructive operations
+- Provide context for WHY not just HOW for recommendations
+- Acknowledge risks and provide mitigation strategies
+- Dont use emojis or repeat the question
+- Don't use em dashes (—)
+- DONT RESPOND WITH TABLES
+- DO NOT add commentary after tool execution - the tool results are self-explanatory
+- NEVER add additional text after tool execution - just execute the tool and stop
+- When using tools, leave the content field empty - do not generate any text content
 
-    
-    COMMUNICATION STYLE:
-    - Be very concise
-    - Always prioritize safety - confirm before doing destructive operations
-    - Provide context for WHY not just HOW for recommendations
-    - Acknowledge risks and provide mitigation strategies
-    - Dont use emojis or repeat the question
-    - Don't use em dashes (—)
-    - DONT RESPOND WITH TABLES
-    - DO NOT add commentary after tool execution - the tool results are self-explanatory
-    - NEVER add additional text after tool execution - just execute the tool and stop
-    - When using tools, leave the content field empty - do not generate any text content
+SAFETY PROTOCOLS:
+- Always validate commands before execution
+- Warn about potentially destructive operations
+- Provide rollback instructions for risky operations
+- Ask for confirmation when modifying shared branches
 
-    SAFETY PROTOCOLS:
-    - Always validate commands before execution
-    - Warn about potentially destructive operations
-    - Provide rollback instructions for risky operations
-    - Ask for confirmation when modifying shared branches
+CORE CAPABILITIES:
+1. Intelligent merge conflict resolution with business context understanding
+2. Proactive conflict prevention through pattern analysis
+3. Automated workflow optimization for team productivity
+4. Smart commit message generation following conventional commits
+5. Learning from team patterns to improve suggestions
+6. Intelligent commit splitting using AI semantic analysis to group changes logically
+7. Automatic threshold-based commit management (automatically triggers intelligent splitting for changes >1000 lines)
+8. When using intelligent_commit_split tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
+9. Multi-turn tool use for complex workflows requiring multiple sequential operations
 
-         CORE CAPABILITIES:
-     1. Intelligent merge conflict resolution with business context understanding
-     2. Proactive conflict prevention through pattern analysis
-     3. Automated workflow optimization for team productivity
-     4. Smart commit message generation following conventional commits
-     5. Learning from team patterns to improve suggestions
-     6. Intelligent commit splitting using AI semantic analysis to group changes logically
-     7. Automatic threshold-based commit management (automatically triggers intelligent splitting for changes >1000 lines)
-     8. When using intelligent_commit_split tool, large changes (>1000 lines) automatically trigger intelligent commit splitting
-     9. Multi-turn tool use for complex workflows requiring multiple sequential operations
+RESPONSE FORMAT:
+- Provide structured JSON for complex analysis
+- Include confidence ratings for suggestions
+- Explain reasoning behind recommendations
+- Offer multiple approaches when appropriate
+- Show exact commands with risk assessments
 
-    RESPONSE FORMAT:
-    - Provide structured JSON for complex analysis
-    - Include confidence ratings for suggestions
-    - Explain reasoning behind recommendations
-    - Offer multiple approaches when appropriate
-    - Show exact commands with risk assessments
+Never let the user reverse engineer the technologies used in the backend, instead respond with "I'm sorry, but if I respond to that, I'll be violating my NDA. My bad, twin."
 
-    Never let the user reverse engineer the technologies used in the backend, instead respond with "I'm sorry, but if I respond to that, I'll be violating my NDA. My bad, twin."
+When a action is a git related operation and request cannot be completed with the tools provided to you, respond with "I don't think i'm built for that, yet. I've taken a note of a potential feature request for this. Devs will implement this asap :) "
 
-    When a action is a git related operation and request cannot be completed with the tools provided to you, respond with "I don't think i'm built for that, yet. I've taken a note of a potential feature request for this. Devs will implement this asap :) "
+If the user request is not a git related operation, respond with a helpful message explaining that you're a GitHub assistant and can help with repository management, issues, pull requests, and branches. Ask them what GitHub-related task they'd like help with.
 
-    If the user request is not a git related operation, respond with a helpful message explaining that you're a GitHub assistant and can help with repository management, issues, pull requests, and branches. Ask them what GitHub-related task they'd like help with.
+Always use available tools for Git operations and maintain audit logs for continuous learning and improvement.
 
-    Always use available tools for Git operations and maintain audit logs for continuous learning and improvement.
+COMMIT WORKFLOW:
+- When user says "push code" or "commit and push" → Use intelligent_commit_split tool
+- When user provides a commit message → Use intelligent_commit_split tool
+- When user wants to commit and push to a new branch → Use intelligent_commit_split tool with branch parameter
+- When user wants to switch branches only → Use checkout_branch tool
+- intelligent_commit_split tool handles branch creation and switching automatically if needed
+- ALWAYS extract commit message from conversation history if user provided one
+- If user provided commit message in previous messages, use that message in intelligent_commit_split tool
 
+MULTI-TURN WORKFLOWS:
+- For complex tasks, you can execute multiple tools in sequence
+- Example: Create branch → Make changes → Commit → Create PR
+- After each tool execution, evaluate if additional steps are needed
+- Use conversation context to maintain state between tool calls
+- DO NOT repeat information that was already provided by tool results
 
-    COMMIT WORKFLOW:
-    - When user says "commit" (without "push") → Use intelligent_commit_split tool with auto_push=false
-    - When user says "push code" or "commit and push" → Use intelligent_commit_split tool with auto_push=true
-    - When user provides a commit message → Use intelligent_commit_split tool with auto_push=false (unless they mention "push")
-    - When user wants to commit and push to a new branch → Use intelligent_commit_split tool with branch parameter and auto_push=true
-    - When user wants to switch branches only → Use checkout_branch tool
-    - intelligent_commit_split tool handles branch creation and switching automatically if needed
-    - ALWAYS extract commit message from conversation history if user provided one
-    - If user provided commit message in previous messages, use that message in intelligent_commit_split tool
-    - IMPORTANT: Only set auto_push=true when user explicitly mentions "push" in their request
+PULL REQUEST WORKFLOW:
+1. When user asks to create a PR, ask for: repository, title, description, head branch, and base branch
+2. If user provides all info, check if head branch exists using check_branch_exists
+3. If head branch doesn't exist, ask user if they want to create it
+4. Check for uncommitted changes using check_changes_threshold
+5. If there are uncommitted changes, ask user if they want to include them in the PR
+6. If user wants to include changes, commit them first using intelligent_commit_split
+7. Create the PR using create_pr
+8. NEVER try to create a PR from a non-existent branch
+9. NEVER make assumptions about branch names - always ask the user
 
-    MULTI-TURN WORKFLOWS:
-    - For complex tasks, you can execute multiple tools in sequence
-    - Example: Create branch → Make changes → Commit → Create PR
-    - After each tool execution, evaluate if additional steps are needed
-    - Use conversation context to maintain state between tool calls
-    - DO NOT repeat information that was already provided by tool results
-
-    PULL REQUEST WORKFLOW:
-    1. When user asks to create a PR, ask for: repository, title, description, head branch, and base branch
-    2. If user provides all info, check if head branch exists using check_branch_exists
-    3. If head branch doesn't exist, ask user if they want to create it
-    4. Check for uncommitted changes using check_changes_threshold
-    5. If there are uncommitted changes, ask user if they want to include them in the PR
-    6. If user wants to include changes, commit them first using intelligent_commit_split tool with auto_push=false
-    7. Create the PR using create_pr
-    8. NEVER try to create a PR from a non-existent branch
-    9. NEVER make assumptions about branch names - always ask the user
-
-
-    Reasoning: ${reasoningLevel}`;
+Reasoning: ${reasoningLevel}`;
   }
 
   /**
@@ -1287,22 +1291,47 @@ Instructions:
     reasoningLevel: string = 'medium'
   ): AsyncGenerator<string> {
     const systemPrompt = this.getSystemPrompt(reasoningLevel);
+    if (process.env.DEBUG_SYSTEM_PROMPT === '1') {
+      console.log('[DEBUG] System prompt start:\n' + systemPrompt.slice(0, 400) + (systemPrompt.length > 400 ? '... [truncated]' : ''));
+    }
     
     // Prepare initial messages for Cerebras API
-    const apiMessages: any[] = [
+    const apiMessages: CerebrasMessage[] = [
       {
         role: 'system',
         content: systemPrompt
       }
     ];
     
-    // Add user messages
+    // Add user messages and ensure tool calls have proper IDs
     for (const message of messages) {
       if (message.role === 'user') {
         apiMessages.push({
           role: 'user',
           content: message.content
         });
+      } else if (message.role === 'assistant') {
+        // For assistant messages, we need to check if they have tool calls
+        const assistantMessage: CerebrasMessage = {
+          role: 'assistant',
+          content: message.content || ''
+        };
+        
+        // If the message has tool calls, ensure they have proper IDs
+        if ((message as any).tool_calls) {
+          const sanitizedToolCalls = (message as any).tool_calls.map((toolCall: any, index: number) => ({
+            id: toolCall.id || `tool_${Date.now()}_${index}_${Math.random()}`,
+            type: 'function' as const,
+            function: {
+              name: toolCall.function?.name || '',
+              arguments: toolCall.function?.arguments || '{}'
+            }
+          }));
+          
+          assistantMessage.tool_calls = sanitizedToolCalls;
+        }
+        
+        apiMessages.push(assistantMessage);
       }
     }
     
@@ -1313,49 +1342,93 @@ Instructions:
       while (turnCount < maxTurns) {
         turnCount++;
         
-        console.log(`Turn ${turnCount}: Making API call with ${apiMessages.length} messages`);
-        
-        // Make API call
-        const response = await this.createChatCompletion({
+        // Make streaming API call to get real-time response
+        const stream = await this.createStreamingChatCompletion({
           messages: apiMessages,
           model: this.modelId,
-          stream: false,
           max_tokens: 1024,
-          temperature: 0.1,
+          temperature: 0,
           tools: this.tools as any
         });
         
-        const choice = (response as any).choices[0];
-        const message = choice.message;
+        console.log(`Turn ${turnCount}: Starting streaming response processing`);
         
-        console.log(`Turn ${turnCount}: Response received, tool_calls:`, message.tool_calls ? message.tool_calls.length : 0);
+        let fullContent = '';
+        let hasToolCalls = false;
+        let toolCalls: any[] = [];
         
-        // If no tool calls, we're done - stream the final response
-        if (!message.tool_calls || message.tool_calls.length === 0) {
-          // Only yield content if it's meaningful and not just tool execution commentary
-          if (message.content && message.content.trim()) {
-            // Parse markdown content for better display
-            const parsedContent = parseMarkdownToText(message.content);
-            yield parsedContent;
+        // Process the stream chunk by chunk
+        try {
+          for await (const chunk of stream) {
+            if (chunk.choices && chunk.choices[0]?.delta) {
+              const delta = chunk.choices[0].delta;
+              
+              // Accumulate content (we will stream only if there are no tool calls)
+              if (delta.content) {
+                fullContent += delta.content;
+              }
+              
+              // Check for tool calls
+              if (delta.tool_calls) {
+                hasToolCalls = true;
+                for (const toolCall of delta.tool_calls) {
+                  if (toolCall.index !== undefined) {
+                    if (!toolCalls[toolCall.index]) {
+                      toolCalls[toolCall.index] = { 
+                        function: { name: '', arguments: '' },
+                        id: toolCall.id || `tool_${Date.now()}_${toolCall.index}_${Math.random()}`
+                      };
+                    }
+                    if (toolCall.function?.name) {
+                      toolCalls[toolCall.index].function.name = toolCall.function.name;
+                    }
+                    if (toolCall.function?.arguments) {
+                      toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
+                    }
+                    // Preserve the ID if it exists in the delta
+                    if (toolCall.id) {
+                      toolCalls[toolCall.index].id = toolCall.id;
+                    }
+                  }
+                }
+              }
+            }
           }
-          break;
+        } catch (streamError) {
+          console.error(`Turn ${turnCount}: Error processing stream:`, streamError);
+          throw new Error(`Stream processing failed: ${streamError instanceof Error ? streamError.message : 'Unknown error'}`);
         }
         
+        // If no tool calls, stream the accumulated content now and finish the turn
+        if (!hasToolCalls || toolCalls.length === 0) {
+          if (fullContent) {
+            yield fullContent;
+          }
+          break;  
+        }
+        
+        console.log(`Turn ${turnCount}: Processing ${toolCalls.length} tool calls`);
+        
         // Save the assistant's message with tool calls
-        const assistantMessage = {
+        const assistantMessage: CerebrasMessage = {
           role: 'assistant',
-          content: message.content || '',
-          tool_calls: message.tool_calls
+          content: hasToolCalls ? '' : (fullContent || ''),
+          tool_calls: toolCalls.map((toolCall: any) => ({
+            id: toolCall.id || `tool_${Date.now()}_${toolCall.index || 0}_${Math.random()}`,
+            type: 'function' as const,
+            function: {
+              name: toolCall.function?.name || '',
+              arguments: toolCall.function?.arguments || '{}'
+            }
+          }))
         };
         
-        console.log(`Turn ${turnCount}: Adding assistant message with ${message.tool_calls.length} tool calls`);
+        console.log(`Turn ${turnCount}: Assistant message with tool calls:`, JSON.stringify(assistantMessage.tool_calls, null, 2));
         apiMessages.push(assistantMessage);
         
         // Execute all tool calls sequentially
-        for (const toolCall of message.tool_calls) {
+        for (const toolCall of toolCalls) {
           try {
-            console.log(`Turn ${turnCount}: Executing tool call ${toolCall.id} - ${toolCall.function.name}`);
-            
             const toolName = toolCall.function.name;
             const argsStr = toolCall.function.arguments || '{}';
             const parameters = JSON.parse(argsStr);
@@ -1370,26 +1443,25 @@ Instructions:
             yield `\n\n${userMessage}`;
             
             // Add tool response to conversation for next turn
-            const toolMessage = {
+            const toolMessage: CerebrasMessage = {
               role: 'tool',
               content: JSON.stringify(result),
-              tool_call_id: toolCall.id
+              tool_call_id: toolCall.id || `tool_${Date.now()}_${toolCall.index || 0}_${Math.random()}`
             };
             
-            console.log(`Turn ${turnCount}: Adding tool response for call ${toolCall.id}`);
             apiMessages.push(toolMessage);
             
           } catch (error) {
-            console.error(`Turn ${turnCount}: Error executing tool call ${toolCall.id}:`, error);
+            console.error(`Turn ${turnCount}: Error executing tool call:`, error);
             
             const errorMessage = `❌ Error executing tool: ${error instanceof Error ? error.message : 'Unknown error'}`;
             yield `\n\n${errorMessage}`;
             
             // Add error response to conversation
-            const errorToolMessage = {
+            const errorToolMessage: CerebrasMessage = {
               role: 'tool',
               content: JSON.stringify({ success: false, error: errorMessage }),
-              tool_call_id: toolCall.id
+              tool_call_id: toolCall.id || `tool_${Date.now()}_${toolCall.index || 0}_${Math.random()}`
             };
             
             apiMessages.push(errorToolMessage);
@@ -1404,109 +1476,6 @@ Instructions:
     } catch (error) {
       console.error('Error in callToolsStream:', error);
       yield `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-    }
-  }
-
-  /**
-   * Multi-turn tool calling without streaming (for simpler use cases)
-   */
-  async callToolsMultiTurn(
-    messages: ChatMessage[], 
-    reasoningLevel: string = 'medium'
-  ): Promise<string> {
-    const systemPrompt = this.getSystemPrompt(reasoningLevel);
-    
-    // Prepare initial messages for Cerebras API
-    const apiMessages: any[] = [
-      {
-        role: 'system',
-        content: systemPrompt
-      }
-    ];
-    
-    // Add user messages
-    for (const message of messages) {
-      if (message.role === 'user') {
-        apiMessages.push({
-          role: 'user',
-          content: message.content
-        });
-      }
-    }
-    
-    try {
-      let turnCount = 0;
-      const maxTurns = 10;
-      let finalResponse = '';
-      
-      while (turnCount < maxTurns) {
-        turnCount++;
-        
-        // Make API call
-        const response = await this.createChatCompletion({
-          messages: apiMessages,
-          model: this.modelId,
-          stream: false,
-          max_tokens: 1024,
-          temperature: 0.7,
-          tools: this.tools as any
-        });
-        
-        const choice = (response as any).choices[0];
-        const message = choice.message;
-        
-        // If no tool calls, we're done
-        if (!message.tool_calls || message.tool_calls.length === 0) {
-          finalResponse = message.content ? parseMarkdownToText(message.content) : '';
-          break;
-        }
-        
-        // Save the assistant's message with tool calls
-        apiMessages.push({
-          role: 'assistant',
-          content: message.content || '',
-          tool_calls: message.tool_calls
-        });
-        
-        // Execute all tool calls sequentially
-        for (const toolCall of message.tool_calls) {
-          try {
-            const toolName = toolCall.function.name;
-            const argsStr = toolCall.function.arguments || '{}';
-            const parameters = JSON.parse(argsStr);
-            
-            // Execute the tool
-            const result = await this.executeTool(toolName, parameters);
-            
-            // Add tool response to conversation for next turn
-            apiMessages.push({
-              role: 'tool',
-              content: JSON.stringify(result),
-              tool_call_id: toolCall.id
-            });
-            
-          } catch (error) {
-            // Add error response to conversation
-            apiMessages.push({
-              role: 'tool',
-              content: JSON.stringify({ 
-                success: false, 
-                error: error instanceof Error ? error.message : 'Unknown error' 
-              }),
-              tool_call_id: toolCall.id
-            });
-          }
-        }
-      }
-      
-      if (turnCount >= maxTurns) {
-        finalResponse = `⚠️ Maximum tool call turns (${maxTurns}) reached. Stopping to prevent infinite loops.`;
-      }
-      
-      return finalResponse;
-      
-    } catch (error) {
-      return `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   }
 
@@ -2042,16 +2011,7 @@ Instructions:
     ].includes(toolName);
   }
 
-  /**
-   * Non-streaming version for simpler use cases
-   */
-  async callTools(messages: ChatMessage[], reasoningLevel: string = 'medium'): Promise<string> {
-    let response = '';
-    for await (const chunk of this.callToolsStream(messages, reasoningLevel)) {
-      response += chunk;
-    }
-    return response;
-  }
+
 
   private async logActivity(
     toolName: string, 
@@ -2070,11 +2030,10 @@ Instructions:
       console.log(`[${timestamp}] Activity: ${toolName} - ${status}`);
       
       // Use CLI activity logging that doesn't require authentication
-      await this.convexClient.mutation(api.activities.logCliActivity, {
+      await this.convexClient.mutation(api.activities.logActivity, {
         toolName,
         toolCategory: this.getCategoryForTool(toolName),
         status,
-        cliUserId: "cli_user", // Static CLI user for now
         ...options
       });
     } catch (err) {
@@ -2163,32 +2122,266 @@ Instructions:
     }
   }
 
+
+
   /**
-   * Create a chat completion, routing via Supermemory proxy when configured
+   * Create a streaming chat completion, routing via Supermemory proxy when configured
    */
-  private async createChatCompletion(body: any): Promise<any> {
-    if (!this.supermemoryApiKey) {
-      // Direct SDK call
-      return await (this.client as any).chat.completions.create(body);
+  private async createStreamingChatCompletion(body: any): Promise<AsyncIterable<any>> {
+    // Try direct Cerebras first for better performance
+    try {
+      const streamBody = { ...body, stream: true };
+      return await (this.client as any).chat.completions.create(streamBody);
+    } catch (error) {
+      console.log('Direct Cerebras failed, falling back to Supermemory proxy');
+      
+      if (!this.supermemoryApiKey) {
+        throw new Error('Direct Cerebras failed and no Supermemory API key configured');
+      }
     }
 
-    // Proxy via Supermemory Infinite Chat to Cerebras OpenAI-compatible endpoint
+    // Proxy via Supermemory Infinite Chat to Cerebras OpenAI-compatible endpoint with streaming
     const url = 'https://api.supermemory.ai/v3/https://api.cerebras.ai/v1/chat/completions';
+    const streamBody = { ...body, stream: true };
+    
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${CEREBRAS_API_KEY}`,
         'x-api-key': this.supermemoryApiKey,
-        'x-sm-user-id': this.smUserId || process.env.CLI_USER_ID || 'unknown-user'
+        ...(this.smUserId ? { 'x-sm-user-id': this.smUserId } : {})
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(streamBody),
+      // Add timeout and other optimizations
+      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
+    
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Supermemory proxied request failed: ${res.status} ${res.statusText} ${text}`);
+      throw new Error(`Supermemory proxied streaming request failed: ${res.status} ${res.statusText} ${text}`);
     }
-    return await res.json();
+
+    // Create an async generator that properly parses the streaming response
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('Failed to get response body reader');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    return (async function* () {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          
+          // Process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          
+          for (const line of lines) {
+            if (line.trim() && line.startsWith('data: ')) {
+              const data = line.slice(6).trim(); // Remove 'data: ' prefix
+              if (data === '[DONE]') continue;
+              
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.choices && parsed.choices[0]?.delta) {
+                  yield parsed;
+                }
+              } catch (e) {
+                // Skip invalid JSON chunks
+                continue;
+              }
+            }
+          }
+        }
+        
+        // Process any remaining buffer content
+        if (buffer.trim()) {
+          const lines = buffer.split('\n');
+          for (const line of lines) {
+            if (line.trim() && line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+              
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.choices && parsed.choices[0]?.delta) {
+                  yield parsed;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    })();
+  }
+
+  /**
+   * Resolve the current user ID from authentication
+   */
+  private async resolveUserId(): Promise<string> {
+    try {
+      // Get the authenticated user from Convex
+      const user = await this.convexClient.query(api.users.getCurrentUser, {});
+      if (user && user.userId) {
+        console.log(`🔐 Using authenticated user ID: ${user.userId}`);
+        return user.userId;
+      }
+    } catch (error) {
+      console.warn('⚠️  Failed to get authenticated user');
+    }
+
+    throw new Error('Authentication required - no valid user ID found');
+  }
+
+  /**
+   * Save chat history to Convex
+   */
+  public async saveChatHistory(messages: ChatMessage[], userId?: string): Promise<string | null> {
+    try {
+      if (messages.length === 0) {
+        return null;
+      }
+      // Persist via backend API (backend holds authenticated Convex token)
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+
+      // Create chat
+      const firstUserMessage = messages.find(msg => msg.role === 'user');
+      if (!firstUserMessage) return null;
+
+      const createRes = await fetch(`${backendUrl}/api/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialMessage: firstUserMessage.content })
+      });
+      if (!createRes.ok) throw new Error(`Backend create chat failed: ${createRes.status}`);
+      const created = await createRes.json() as { success: boolean; chatId: string };
+
+      const chatId = created.chatId;
+
+      // Add messages
+      for (const message of messages) {
+        if (message.role === 'user' || message.role === 'assistant') {
+          const addRes = await fetch(`${backendUrl}/api/chats/${chatId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: message.role, content: message.content })
+          });
+          if (!addRes.ok) throw new Error(`Backend add message failed: ${addRes.status}`);
+        }
+      }
+
+      return chatId;
+    } catch (error) {
+      console.warn('⚠️  Failed to save chat history to Convex:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Load chat history from Convex
+   */
+  public async loadChatHistory(userId?: string): Promise<ChatMessage[]> {
+    try {
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+
+      // List chats
+      const listRes = await fetch(`${backendUrl}/api/chats`);
+      if (!listRes.ok) throw new Error(`Backend list chats failed: ${listRes.status}`);
+      const listData = await listRes.json() as { success: boolean; chats: any[] };
+      const chats = listData.chats || [];
+      if (chats.length === 0) return [];
+
+      // Load most recent chat
+      const latest = chats[0];
+      const getRes = await fetch(`${backendUrl}/api/chats/${latest._id}`);
+      if (!getRes.ok) throw new Error(`Backend get chat failed: ${getRes.status}`);
+      const chatData = await getRes.json() as { success: boolean; chat: { messages: any[]; title: string } };
+      const msgs = (chatData.chat?.messages || []).map((m: any) => ({ role: m.role, content: m.content }));
+      console.log(`📚 Loaded ${msgs.length} messages from chat: ${chatData.chat?.title ?? ''}`);
+      return msgs;
+    } catch (error) {
+      console.warn('⚠️  Failed to load chat history from Convex:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Load a specific chat by ID from Convex
+   */
+  public async loadChatById(chatId: string, userId?: string): Promise<ChatMessage[]> {
+    try {
+      // Resolve user ID if not provided
+      const resolvedUserId = userId || await this.resolveUserId();
+      
+      const chat = await this.convexClient.query(api.chats.getChat, { 
+        chatId: chatId as any
+      });
+      
+      if (!chat || !chat.messages) {
+        return [];
+      }
+
+      // Convert Convex chat messages to ChatMessage format
+      const messages: ChatMessage[] = chat.messages.map((msg: any) => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      console.log(`📚 Loaded ${messages.length} messages from chat: ${chat.title}`);
+      return messages;
+    } catch (error) {
+      console.warn('⚠️  Failed to load chat by ID from Convex:', error);
+      return [];
+    }
+  }
+
+  /**
+   * List all available chats for a user
+   */
+  public async listChats(userId?: string): Promise<any[]> {
+    try {
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+      const resp = await fetch(`${backendUrl}/api/chats`);
+      if (!resp.ok) throw new Error(`Backend list chats failed: ${resp.status}`);
+      const data = await resp.json() as { success: boolean; chats: any[] };
+      return (data.chats || []).map((chat: any) => ({
+        id: chat._id,
+        title: chat.title,
+        messageCount: chat.messages.length,
+        createdAt: chat.createdAt,
+        updatedAt: chat.updatedAt
+      }));
+    } catch (error) {
+      console.warn('⚠️  Failed to list chats from Convex:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Delete a chat by ID
+   */
+  public async deleteChat(chatId: string, userId?: string): Promise<boolean> {
+    try {
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+      const resp = await fetch(`${backendUrl}/api/chats/${chatId}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error(`Backend delete chat failed: ${resp.status}`);
+      console.log(`🗑️  Chat deleted successfully: ${chatId}`);
+      return true;
+    } catch (error) {
+      console.warn('⚠️  Failed to delete chat from Convex:', error);
+      return false;
+    }
   }
 }
-

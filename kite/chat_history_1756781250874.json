@@ -1,0 +1,22 @@
+{
+  "timestamp": 1756781250874,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, I'm Kite, your personal git assistant. How may I help you today?"
+    },
+    {
+      "role": "user",
+      "content": "yo"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello, I'm Kite, your personal git assistant. How may I help you today?"
+    }
+  ],
+  "machineId": "ca1d84fd"
+}

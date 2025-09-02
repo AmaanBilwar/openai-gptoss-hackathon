@@ -57,8 +57,8 @@ const page = () => {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center space-y-8">
-      <h1 className="text-4xl font-bold text-gray-800 mb-1">Welcome to Kite</h1>
-      <p className="text-gray-600 mt-0">Beyond the Conflicts</p>
+      <h1 className="text-4xl font-bold text-white mb-1">Welcome to Kite</h1>
+      <p className="text-white italic mt-0">Beyond the Conflicts</p>
       <button
         onClick={handleGithubSignIn}
         className="flex cursor-pointer items-center space-x-3 bg-gray-900 hover:bg-gray-800 text-white px-8 py-4 rounded-lg font-medium transition-colors shadow-lg"
