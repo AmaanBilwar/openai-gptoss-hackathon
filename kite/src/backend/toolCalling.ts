@@ -1342,49 +1342,93 @@ Reasoning: ${reasoningLevel}`;
       while (turnCount < maxTurns) {
         turnCount++;
         
-        console.log(`Turn ${turnCount}: Making API call with ${apiMessages.length} messages`);
-        
-        // Make API call
-        const response = await this.createChatCompletion({
+        // Make streaming API call to get real-time response
+        const stream = await this.createStreamingChatCompletion({
           messages: apiMessages,
           model: this.modelId,
-          stream: false,
           max_tokens: 1024,
-          temperature: 0.1,
+          temperature: 0,
           tools: this.tools as any
         });
         
-        const choice = (response as any).choices[0];
-        const message = choice.message;
+        console.log(`Turn ${turnCount}: Starting streaming response processing`);
         
-        console.log(`Turn ${turnCount}: Response received, tool_calls:`, message.tool_calls ? message.tool_calls.length : 0);
+        let fullContent = '';
+        let hasToolCalls = false;
+        let toolCalls: any[] = [];
         
-        // If no tool calls, we're done - stream the final response
-        if (!message.tool_calls || message.tool_calls.length === 0) {
-          // Only yield content if it's meaningful and not just tool execution commentary
-          if (message.content && message.content.trim()) {
-            // Parse markdown content for better display
-            const parsedContent = parseMarkdownToText(message.content);
-            yield parsedContent;
+        // Process the stream chunk by chunk
+        try {
+          for await (const chunk of stream) {
+            if (chunk.choices && chunk.choices[0]?.delta) {
+              const delta = chunk.choices[0].delta;
+              
+              // Accumulate content (we will stream only if there are no tool calls)
+              if (delta.content) {
+                fullContent += delta.content;
+              }
+              
+              // Check for tool calls
+              if (delta.tool_calls) {
+                hasToolCalls = true;
+                for (const toolCall of delta.tool_calls) {
+                  if (toolCall.index !== undefined) {
+                    if (!toolCalls[toolCall.index]) {
+                      toolCalls[toolCall.index] = { 
+                        function: { name: '', arguments: '' },
+                        id: toolCall.id || `tool_${Date.now()}_${toolCall.index}_${Math.random()}`
+                      };
+                    }
+                    if (toolCall.function?.name) {
+                      toolCalls[toolCall.index].function.name = toolCall.function.name;
+                    }
+                    if (toolCall.function?.arguments) {
+                      toolCalls[toolCall.index].function.arguments += toolCall.function.arguments;
+                    }
+                    // Preserve the ID if it exists in the delta
+                    if (toolCall.id) {
+                      toolCalls[toolCall.index].id = toolCall.id;
+                    }
+                  }
+                }
+              }
+            }
           }
-          break;
+        } catch (streamError) {
+          console.error(`Turn ${turnCount}: Error processing stream:`, streamError);
+          throw new Error(`Stream processing failed: ${streamError instanceof Error ? streamError.message : 'Unknown error'}`);
         }
         
+        // If no tool calls, stream the accumulated content now and finish the turn
+        if (!hasToolCalls || toolCalls.length === 0) {
+          if (fullContent) {
+            yield fullContent;
+          }
+          break;  
+        }
+        
+        console.log(`Turn ${turnCount}: Processing ${toolCalls.length} tool calls`);
+        
         // Save the assistant's message with tool calls
-        const assistantMessage = {
+        const assistantMessage: CerebrasMessage = {
           role: 'assistant',
-          content: message.content || '',
-          tool_calls: message.tool_calls
+          content: hasToolCalls ? '' : (fullContent || ''),
+          tool_calls: toolCalls.map((toolCall: any) => ({
+            id: toolCall.id || `tool_${Date.now()}_${toolCall.index || 0}_${Math.random()}`,
+            type: 'function' as const,
+            function: {
+              name: toolCall.function?.name || '',
+              arguments: toolCall.function?.arguments || '{}'
+            }
+          }))
         };
         
-        console.log(`Turn ${turnCount}: Adding assistant message with ${message.tool_calls.length} tool calls`);
+        console.log(`Turn ${turnCount}: Assistant message with tool calls:`, JSON.stringify(assistantMessage.tool_calls, null, 2));
         apiMessages.push(assistantMessage);
         
         // Execute all tool calls sequentially
-        for (const toolCall of message.tool_calls) {
+        for (const toolCall of toolCalls) {
           try {
-            console.log(`Turn ${turnCount}: Executing tool call ${toolCall.id} - ${toolCall.function.name}`);
-            
             const toolName = toolCall.function.name;
             const argsStr = toolCall.function.arguments || '{}';
             const parameters = JSON.parse(argsStr);
@@ -1432,109 +1476,6 @@ Reasoning: ${reasoningLevel}`;
     } catch (error) {
       console.error('Error in callToolsStream:', error);
       yield `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-    }
-  }
-
-  /**
-   * Multi-turn tool calling without streaming (for simpler use cases)
-   */
-  async callToolsMultiTurn(
-    messages: ChatMessage[], 
-    reasoningLevel: string = 'medium'
-  ): Promise<string> {
-    const systemPrompt = this.getSystemPrompt(reasoningLevel);
-    
-    // Prepare initial messages for Cerebras API
-    const apiMessages: any[] = [
-      {
-        role: 'system',
-        content: systemPrompt
-      }
-    ];
-    
-    // Add user messages
-    for (const message of messages) {
-      if (message.role === 'user') {
-        apiMessages.push({
-          role: 'user',
-          content: message.content
-        });
-      }
-    }
-    
-    try {
-      let turnCount = 0;
-      const maxTurns = 10;
-      let finalResponse = '';
-      
-      while (turnCount < maxTurns) {
-        turnCount++;
-        
-        // Make API call
-        const response = await this.createChatCompletion({
-          messages: apiMessages,
-          model: this.modelId,
-          stream: false,
-          max_tokens: 1024,
-          temperature: 0.7,
-          tools: this.tools as any
-        });
-        
-        const choice = (response as any).choices[0];
-        const message = choice.message;
-        
-        // If no tool calls, we're done
-        if (!message.tool_calls || message.tool_calls.length === 0) {
-          finalResponse = message.content ? parseMarkdownToText(message.content) : '';
-          break;
-        }
-        
-        // Save the assistant's message with tool calls
-        apiMessages.push({
-          role: 'assistant',
-          content: message.content || '',
-          tool_calls: message.tool_calls
-        });
-        
-        // Execute all tool calls sequentially
-        for (const toolCall of message.tool_calls) {
-          try {
-            const toolName = toolCall.function.name;
-            const argsStr = toolCall.function.arguments || '{}';
-            const parameters = JSON.parse(argsStr);
-            
-            // Execute the tool
-            const result = await this.executeTool(toolName, parameters);
-            
-            // Add tool response to conversation for next turn
-            apiMessages.push({
-              role: 'tool',
-              content: JSON.stringify(result),
-              tool_call_id: toolCall.id
-            });
-            
-          } catch (error) {
-            // Add error response to conversation
-            apiMessages.push({
-              role: 'tool',
-              content: JSON.stringify({ 
-                success: false, 
-                error: error instanceof Error ? error.message : 'Unknown error' 
-              }),
-              tool_call_id: toolCall.id
-            });
-          }
-        }
-      }
-      
-      if (turnCount >= maxTurns) {
-        finalResponse = `⚠️ Maximum tool call turns (${maxTurns}) reached. Stopping to prevent infinite loops.`;
-      }
-      
-      return finalResponse;
-      
-    } catch (error) {
-      return `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   }
 
@@ -2089,11 +2030,10 @@ Reasoning: ${reasoningLevel}`;
       console.log(`[${timestamp}] Activity: ${toolName} - ${status}`);
       
       // Use CLI activity logging that doesn't require authentication
-      await this.convexClient.mutation(api.activities.logCliActivity, {
+      await this.convexClient.mutation(api.activities.logActivity, {
         toolName,
         toolCategory: this.getCategoryForTool(toolName),
         status,
-        cliUserId: "cli_user", // Static CLI user for now
         ...options
       });
     } catch (err) {
@@ -2182,32 +2122,266 @@ Reasoning: ${reasoningLevel}`;
     }
   }
 
+
+
   /**
-   * Create a chat completion, routing via Supermemory proxy when configured
+   * Create a streaming chat completion, routing via Supermemory proxy when configured
    */
-  private async createChatCompletion(body: any): Promise<any> {
-    if (!this.supermemoryApiKey) {
-      // Direct SDK call
-      return await (this.client as any).chat.completions.create(body);
+  private async createStreamingChatCompletion(body: any): Promise<AsyncIterable<any>> {
+    // Try direct Cerebras first for better performance
+    try {
+      const streamBody = { ...body, stream: true };
+      return await (this.client as any).chat.completions.create(streamBody);
+    } catch (error) {
+      console.log('Direct Cerebras failed, falling back to Supermemory proxy');
+      
+      if (!this.supermemoryApiKey) {
+        throw new Error('Direct Cerebras failed and no Supermemory API key configured');
+      }
     }
 
-    // Proxy via Supermemory Infinite Chat to Cerebras OpenAI-compatible endpoint
+    // Proxy via Supermemory Infinite Chat to Cerebras OpenAI-compatible endpoint with streaming
     const url = 'https://api.supermemory.ai/v3/https://api.cerebras.ai/v1/chat/completions';
+    const streamBody = { ...body, stream: true };
+    
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${CEREBRAS_API_KEY}`,
         'x-api-key': this.supermemoryApiKey,
-        'x-sm-user-id': this.smUserId || process.env.CLI_USER_ID || 'unknown-user'
+        ...(this.smUserId ? { 'x-sm-user-id': this.smUserId } : {})
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(streamBody),
+      // Add timeout and other optimizations
+      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
+    
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`Supermemory proxied request failed: ${res.status} ${res.statusText} ${text}`);
+      throw new Error(`Supermemory proxied streaming request failed: ${res.status} ${res.statusText} ${text}`);
     }
-    return await res.json();
+
+    // Create an async generator that properly parses the streaming response
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('Failed to get response body reader');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    return (async function* () {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          
+          // Process complete lines
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          
+          for (const line of lines) {
+            if (line.trim() && line.startsWith('data: ')) {
+              const data = line.slice(6).trim(); // Remove 'data: ' prefix
+              if (data === '[DONE]') continue;
+              
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.choices && parsed.choices[0]?.delta) {
+                  yield parsed;
+                }
+              } catch (e) {
+                // Skip invalid JSON chunks
+                continue;
+              }
+            }
+          }
+        }
+        
+        // Process any remaining buffer content
+        if (buffer.trim()) {
+          const lines = buffer.split('\n');
+          for (const line of lines) {
+            if (line.trim() && line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') continue;
+              
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.choices && parsed.choices[0]?.delta) {
+                  yield parsed;
+                }
+              } catch (e) {
+                continue;
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    })();
+  }
+
+  /**
+   * Resolve the current user ID from authentication
+   */
+  private async resolveUserId(): Promise<string> {
+    try {
+      // Get the authenticated user from Convex
+      const user = await this.convexClient.query(api.users.getCurrentUser, {});
+      if (user && user.userId) {
+        console.log(`🔐 Using authenticated user ID: ${user.userId}`);
+        return user.userId;
+      }
+    } catch (error) {
+      console.warn('⚠️  Failed to get authenticated user');
+    }
+
+    throw new Error('Authentication required - no valid user ID found');
+  }
+
+  /**
+   * Save chat history to Convex
+   */
+  public async saveChatHistory(messages: ChatMessage[], userId?: string): Promise<string | null> {
+    try {
+      if (messages.length === 0) {
+        return null;
+      }
+      // Persist via backend API (backend holds authenticated Convex token)
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+
+      // Create chat
+      const firstUserMessage = messages.find(msg => msg.role === 'user');
+      if (!firstUserMessage) return null;
+
+      const createRes = await fetch(`${backendUrl}/api/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialMessage: firstUserMessage.content })
+      });
+      if (!createRes.ok) throw new Error(`Backend create chat failed: ${createRes.status}`);
+      const created = await createRes.json() as { success: boolean; chatId: string };
+
+      const chatId = created.chatId;
+
+      // Add messages
+      for (const message of messages) {
+        if (message.role === 'user' || message.role === 'assistant') {
+          const addRes = await fetch(`${backendUrl}/api/chats/${chatId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role: message.role, content: message.content })
+          });
+          if (!addRes.ok) throw new Error(`Backend add message failed: ${addRes.status}`);
+        }
+      }
+
+      return chatId;
+    } catch (error) {
+      console.warn('⚠️  Failed to save chat history to Convex:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Load chat history from Convex
+   */
+  public async loadChatHistory(userId?: string): Promise<ChatMessage[]> {
+    try {
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+
+      // List chats
+      const listRes = await fetch(`${backendUrl}/api/chats`);
+      if (!listRes.ok) throw new Error(`Backend list chats failed: ${listRes.status}`);
+      const listData = await listRes.json() as { success: boolean; chats: any[] };
+      const chats = listData.chats || [];
+      if (chats.length === 0) return [];
+
+      // Load most recent chat
+      const latest = chats[0];
+      const getRes = await fetch(`${backendUrl}/api/chats/${latest._id}`);
+      if (!getRes.ok) throw new Error(`Backend get chat failed: ${getRes.status}`);
+      const chatData = await getRes.json() as { success: boolean; chat: { messages: any[]; title: string } };
+      const msgs = (chatData.chat?.messages || []).map((m: any) => ({ role: m.role, content: m.content }));
+      console.log(`📚 Loaded ${msgs.length} messages from chat: ${chatData.chat?.title ?? ''}`);
+      return msgs;
+    } catch (error) {
+      console.warn('⚠️  Failed to load chat history from Convex:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Load a specific chat by ID from Convex
+   */
+  public async loadChatById(chatId: string, userId?: string): Promise<ChatMessage[]> {
+    try {
+      // Resolve user ID if not provided
+      const resolvedUserId = userId || await this.resolveUserId();
+      
+      const chat = await this.convexClient.query(api.chats.getChat, { 
+        chatId: chatId as any
+      });
+      
+      if (!chat || !chat.messages) {
+        return [];
+      }
+
+      // Convert Convex chat messages to ChatMessage format
+      const messages: ChatMessage[] = chat.messages.map((msg: any) => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      console.log(`📚 Loaded ${messages.length} messages from chat: ${chat.title}`);
+      return messages;
+    } catch (error) {
+      console.warn('⚠️  Failed to load chat by ID from Convex:', error);
+      return [];
+    }
+  }
+
+  /**
+   * List all available chats for a user
+   */
+  public async listChats(userId?: string): Promise<any[]> {
+    try {
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+      const resp = await fetch(`${backendUrl}/api/chats`);
+      if (!resp.ok) throw new Error(`Backend list chats failed: ${resp.status}`);
+      const data = await resp.json() as { success: boolean; chats: any[] };
+      return (data.chats || []).map((chat: any) => ({
+        id: chat._id,
+        title: chat.title,
+        messageCount: chat.messages.length,
+        createdAt: chat.createdAt,
+        updatedAt: chat.updatedAt
+      }));
+    } catch (error) {
+      console.warn('⚠️  Failed to list chats from Convex:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Delete a chat by ID
+   */
+  public async deleteChat(chatId: string, userId?: string): Promise<boolean> {
+    try {
+      const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+      const resp = await fetch(`${backendUrl}/api/chats/${chatId}`, { method: 'DELETE' });
+      if (!resp.ok) throw new Error(`Backend delete chat failed: ${resp.status}`);
+      console.log(`🗑️  Chat deleted successfully: ${chatId}`);
+      return true;
+    } catch (error) {
+      console.warn('⚠️  Failed to delete chat from Convex:', error);
+      return false;
+    }
   }
 }
-

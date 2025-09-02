@@ -56,30 +56,14 @@ export const getActivityStats = query({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
 
     try {
-      let activities = [];
-      
-      if (!identity) {
-        // For unauthenticated users, show CLI activities
-        activities = await ctx.db
-          .query("activities")
-          .withIndex("by_user_id", (q) => q.eq("userId", "cli_user"))
-          .collect();
-      } else {
-        // For authenticated users, combine their activities + CLI activities
-        const userActivities = await ctx.db
-          .query("activities")
-          .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
-          .collect();
-          
-        const cliActivities = await ctx.db
-          .query("activities")
-          .withIndex("by_user_id", (q) => q.eq("userId", "cli_user"))
-          .collect();
-          
-        activities = [...userActivities, ...cliActivities];
-      }
+      // For authenticated users, get their activities
+      const activities = await ctx.db
+        .query("activities")
+        .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
+        .collect();
 
       const total = activities.length;
       const successful = activities.filter(a => a.status === "completed").length;
