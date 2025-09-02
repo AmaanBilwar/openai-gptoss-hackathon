@@ -6,5 +6,4 @@ __pycache__/
 
 .env
 .ruff_cache
-
 .env.local

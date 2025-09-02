@@ -16,6 +16,7 @@ import type {
 import type * as activities from "../activities.js";
 import type * as chats from "../chats.js";
 import type * as repositories from "../repositories.js";
+import type * as settings from "../settings.js";
 import type * as users from "../users.js";
 
 /**
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   chats: typeof chats;
   repositories: typeof repositories;
+  settings: typeof settings;
   users: typeof users;
 }>;
 export declare const api: FilterApi<

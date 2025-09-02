@@ -98,214 +98,340 @@ export default function OperationsPage() {
       description: "Support covert extraction in South America",
       objectives: [
         "Secure extraction point",
-        "Neutralize threats",
-        "Extract asset",
+        "Provide cover fire",
+        "Ensure safe passage",
       ],
     },
     {
       id: "OP-BRAVO-005",
-      name: "SILENT BLADE",
-      status: "compromised",
-      priority: "critical",
-      location: "Moscow",
-      agents: 6,
-      progress: 40,
-      startDate: "2025-06-05",
-      estimatedCompletion: "2025-06-20",
-      description: "Monitor rogue agent communications in Berlin",
-      objectives: ["Assess compromise", "Extract personnel", "Damage control"],
+      name: "SILENT STORM",
+      status: "on-hold",
+      priority: "low",
+      location: "Tokyo",
+      agents: 1,
+      progress: 10,
+      startDate: "2025-06-25",
+      estimatedCompletion: "2025-07-10",
+      description: "Gather intelligence on corporate espionage",
+      objectives: ["Infilitrate facility", "Access database", "Extract data"],
     },
   ];
 
-  const getStatusColor = (status: string): string => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "active":
-        return "bg-white/20 text-white";
+        return "hsl(var(--green-500))";
       case "planning":
-        return "bg-orange-500/20 text-orange-500";
+        return "hsl(var(--orange-500))";
       case "completed":
-        return "bg-white/20 text-white";
-      case "compromised":
-        return "bg-red-500/20 text-red-500";
+        return "hsl(var(--green-500))";
+      case "on-hold":
+        return "hsl(var(--red-500))";
       default:
-        return "bg-neutral-500/20 text-neutral-300";
+        return "hsl(var(--neutral-500))";
     }
   };
 
-  const getPriorityColor = (priority: string): string => {
+  const getStatusBgColor = (status: string) => {
+    switch (status) {
+      case "active":
+        return "hsl(var(--green-500) / 0.2)";
+      case "planning":
+        return "hsl(var(--orange-500) / 0.2)";
+      case "completed":
+        return "hsl(var(--green-500) / 0.2)";
+      case "on-hold":
+        return "hsl(var(--red-500) / 0.2)";
+      default:
+        return "hsl(var(--neutral-500) / 0.2)";
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "critical":
-        return "bg-red-500/20 text-red-500";
+        return "hsl(var(--red-500))";
       case "high":
-        return "bg-orange-500/20 text-orange-500";
+        return "hsl(var(--orange-500))";
       case "medium":
-        return "bg-neutral-500/20 text-neutral-300";
+        return "hsl(var(--neutral-500))";
       case "low":
-        return "bg-white/20 text-white";
+        return "hsl(var(--neutral-500))";
       default:
-        return "bg-neutral-500/20 text-neutral-300";
+        return "hsl(var(--neutral-500))";
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "active":
-        return <Target className="w-4 h-4" />;
-      case "planning":
-        return <Clock className="w-4 h-4" />;
-      case "completed":
-        return <CheckCircle className="w-4 h-4" />;
-      case "compromised":
-        return <XCircle className="w-4 h-4" />;
+  const getPriorityBgColor = (priority: string) => {
+    switch (priority) {
+      case "critical":
+        return "hsl(var(--red-500) / 0.2)";
+      case "high":
+        return "hsl(var(--orange-500) / 0.2)";
+      case "medium":
+        return "hsl(var(--neutral-500) / 0.2)";
+      case "low":
+        return "hsl(var(--neutral-500) / 0.2)";
       default:
-        return <AlertTriangle className="w-4 h-4" />;
+        return "hsl(var(--neutral-500) / 0.2)";
     }
   };
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-wider">
-            OPERATIONS CENTER
+          <h1
+            className="text-2xl font-bold"
+            style={{ color: "hsl(var(--foreground))" }}
+          >
+            Operations Center
           </h1>
-          <p className="text-sm text-neutral-400">
-            Mission planning and execution oversight
+          <p className="text-sm" style={{ color: "hsl(var(--neutral-400))" }}>
+            Monitor and manage active field operations
           </p>
         </div>
         <div className="flex gap-2">
-          <Button className="bg-orange-500 hover:bg-orange-600 text-white">
+          <Button
+            style={{
+              backgroundColor: "hsl(var(--orange-500))",
+              color: "hsl(var(--foreground))",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor =
+                "hsl(var(--orange-500) / 0.8)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "hsl(var(--orange-500))";
+            }}
+          >
+            <Target className="w-4 h-4 mr-2" />
             New Operation
           </Button>
-          <Button className="bg-orange-500 hover:bg-orange-600 text-white">
-            Mission Brief
+          <Button
+            style={{
+              backgroundColor: "hsl(var(--orange-500))",
+              color: "hsl(var(--foreground))",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor =
+                "hsl(var(--orange-500) / 0.8)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "hsl(var(--orange-500))";
+            }}
+          >
+            <AlertTriangle className="w-4 h-4 mr-2" />
+            Emergency Protocol
           </Button>
         </div>
       </div>
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-neutral-900 border-neutral-700">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <Card
+          className="lg:col-span-1"
+          style={{
+            backgroundColor: "hsl(var(--neutral-900))",
+            borderColor: "hsl(var(--neutral-700))",
+          }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider">
-                  ACTIVE OPS
-                </p>
-                <p className="text-2xl font-bold text-white font-mono">23</p>
-              </div>
-              <Target className="w-8 h-8 text-white" />
+            <p
+              className="text-xs tracking-wider"
+              style={{ color: "hsl(var(--neutral-400))" }}
+            >
+              ACTIVE OPERATIONS
+            </p>
+            <div className="flex items-center justify-between mt-2">
+              <p
+                className="text-2xl font-bold font-mono"
+                style={{ color: "hsl(var(--green-500))" }}
+              >
+                {operations.filter((op) => op.status === "active").length}
+              </p>
+              <Target
+                className="w-8 h-8"
+                style={{ color: "hsl(var(--green-500))" }}
+              />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-neutral-900 border-neutral-700">
+        <Card
+          className="lg:col-span-1"
+          style={{
+            backgroundColor: "hsl(var(--neutral-900))",
+            borderColor: "hsl(var(--neutral-700))",
+          }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider">
-                  COMPLETED
-                </p>
-                <p className="text-2xl font-bold text-white font-mono">156</p>
-              </div>
-              <CheckCircle className="w-8 h-8 text-white" />
+            <p
+              className="text-xs tracking-wider"
+              style={{ color: "hsl(var(--neutral-400))" }}
+            >
+              PLANNING PHASE
+            </p>
+            <div className="flex items-center justify-between mt-2">
+              <p
+                className="text-2xl font-bold font-mono"
+                style={{ color: "hsl(var(--orange-500))" }}
+              >
+                {operations.filter((op) => op.status === "planning").length}
+              </p>
+              <Clock
+                className="w-8 h-8"
+                style={{ color: "hsl(var(--orange-500))" }}
+              />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-neutral-900 border-neutral-700">
+        <Card
+          className="lg:col-span-1"
+          style={{
+            backgroundColor: "hsl(var(--neutral-900))",
+            borderColor: "hsl(var(--neutral-700))",
+          }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider">
-                  COMPROMISED
-                </p>
-                <p className="text-2xl font-bold text-red-500 font-mono">2</p>
-              </div>
-              <XCircle className="w-8 h-8 text-red-500" />
+            <p
+              className="text-xs tracking-wider"
+              style={{ color: "hsl(var(--neutral-400))" }}
+            >
+              COMPLETED
+            </p>
+            <div className="flex items-center justify-between mt-2">
+              <p
+                className="text-2xl font-bold font-mono"
+                style={{ color: "hsl(var(--green-500))" }}
+              >
+                {operations.filter((op) => op.status === "completed").length}
+              </p>
+              <CheckCircle
+                className="w-8 h-8"
+                style={{ color: "hsl(var(--green-500))" }}
+              />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-neutral-900 border-neutral-700">
+        <Card
+          className="lg:col-span-1"
+          style={{
+            backgroundColor: "hsl(var(--neutral-900))",
+            borderColor: "hsl(var(--neutral-700))",
+          }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-neutral-400 tracking-wider">
-                  SUCCESS RATE
-                </p>
-                <p className="text-2xl font-bold text-white font-mono">94%</p>
-              </div>
-              <AlertTriangle className="w-8 h-8 text-white" />
+            <p
+              className="text-xs tracking-wider"
+              style={{ color: "hsl(var(--neutral-400))" }}
+            >
+              ON HOLD
+            </p>
+            <div className="flex items-center justify-between mt-2">
+              <p
+                className="text-2xl font-bold font-mono"
+                style={{ color: "hsl(var(--red-500))" }}
+              >
+                {operations.filter((op) => op.status === "on-hold").length}
+              </p>
+              <XCircle
+                className="w-8 h-8"
+                style={{ color: "hsl(var(--red-500))" }}
+              />
             </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Operations List */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {operations.map((operation) => (
           <Card
             key={operation.id}
-            className="bg-neutral-900 border-neutral-700 hover:border-orange-500/50 transition-colors cursor-pointer"
-            onClick={() => setSelectedOperation(operation as any)}
+            className="hover:border-orange-500/50 transition-colors cursor-pointer"
+            style={{
+              backgroundColor: "hsl(var(--neutral-900))",
+              borderColor: "hsl(var(--neutral-700))",
+            }}
+            onClick={() => setSelectedOperation(operation)}
           >
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
                 <div>
-                  <CardTitle className="text-sm font-bold text-white tracking-wider">
-                    {operation.name}
-                  </CardTitle>
-                  <p className="text-xs text-neutral-400 font-mono">
+                  <p
+                    className="text-xs font-mono"
+                    style={{ color: "hsl(var(--neutral-400))" }}
+                  >
                     {operation.id}
                   </p>
+                  <CardTitle
+                    className="text-lg font-bold"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
+                    {operation.name}
+                  </CardTitle>
                 </div>
-                <div className="flex items-center gap-2">
-                  {getStatusIcon(operation.status)}
+                <div className="flex gap-2">
+                  <Badge
+                    style={{
+                      backgroundColor: getStatusBgColor(operation.status),
+                      color: getStatusColor(operation.status),
+                    }}
+                  >
+                    {operation.status}
+                  </Badge>
+                  <Badge
+                    style={{
+                      backgroundColor: getPriorityBgColor(operation.priority),
+                      color: getPriorityColor(operation.priority),
+                    }}
+                  >
+                    {operation.priority}
+                  </Badge>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <Badge className={getStatusColor(operation.status)}>
-                  {operation.status.toUpperCase()}
-                </Badge>
-                <Badge className={getPriorityColor(operation.priority)}>
-                  {operation.priority.toUpperCase()}
-                </Badge>
+              <div
+                className="flex items-center gap-2 text-xs"
+                style={{ color: "hsl(var(--neutral-400))" }}
+              >
+                <MapPin className="w-3 h-3" />
+                {operation.location}
+              </div>
+              <div
+                className="flex items-center gap-2 text-xs"
+                style={{ color: "hsl(var(--neutral-400))" }}
+              >
+                <Users className="w-3 h-3" />
+                {operation.agents} agents
+              </div>
+              <div
+                className="flex items-center gap-2 text-xs"
+                style={{ color: "hsl(var(--neutral-400))" }}
+              >
+                <Clock className="w-3 h-3" />
+                {operation.startDate}
               </div>
 
-              <p className="text-sm text-neutral-300">
-                {operation.description}
-              </p>
-
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-neutral-400">
-                  <MapPin className="w-3 h-3" />
-                  <span>{operation.location}</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-neutral-400">
-                  <Users className="w-3 h-3" />
-                  <span>{operation.agents} agents assigned</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-neutral-400">
-                  <Clock className="w-3 h-3" />
-                  <span>Est. completion: {operation.estimatedCompletion}</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-neutral-400">Progress</span>
-                  <span className="text-white font-mono">
-                    {operation.progress}%
-                  </span>
-                </div>
-                <div className="w-full bg-neutral-800 rounded-full h-2">
+              <div>
+                <span style={{ color: "hsl(var(--neutral-400))" }}>
+                  Progress
+                </span>
+                <div
+                  className="w-full rounded-full h-2 mt-2"
+                  style={{ backgroundColor: "hsl(var(--neutral-800))" }}
+                >
                   <div
-                    className="bg-orange-500 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${operation.progress}%` }}
+                    className="h-2 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${operation.progress}%`,
+                      backgroundColor: "hsl(var(--orange-500))",
+                    }}
                   ></div>
                 </div>
               </div>
@@ -314,157 +440,228 @@ export default function OperationsPage() {
         ))}
       </div>
 
-      {/* Operation Detail Modal */}
+      {/* Operation Details Modal */}
       {selectedOperation && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="bg-neutral-900 border-neutral-700 w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card
+            className="w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+            style={{
+              backgroundColor: "hsl(var(--neutral-900))",
+              borderColor: "hsl(var(--neutral-700))",
+            }}
+          >
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-xl font-bold text-white tracking-wider">
-                  {selectedOperation.name as string}
-                </CardTitle>
-                <p className="text-sm text-neutral-400 font-mono">
+                <p
+                  className="text-sm font-mono"
+                  style={{ color: "hsl(var(--neutral-400))" }}
+                >
                   {selectedOperation.id}
                 </p>
+                <CardTitle
+                  className="text-xl font-bold"
+                  style={{ color: "hsl(var(--foreground))" }}
+                >
+                  {selectedOperation.name}
+                </CardTitle>
               </div>
               <Button
                 variant="ghost"
+                size="sm"
+                style={{ color: "hsl(var(--neutral-400))" }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "hsl(var(--foreground))";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "hsl(var(--neutral-400))";
+                }}
                 onClick={() => setSelectedOperation(null)}
-                className="text-neutral-400 hover:text-white"
               >
-                ✕
+                ×
               </Button>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-neutral-300 tracking-wider mb-2">
-                      OPERATION STATUS
-                    </h3>
-                    <div className="flex gap-2">
-                      <Badge
-                        className={getStatusColor(
-                          selectedOperation.status as string
-                        )}
-                      >
-                        {selectedOperation.status.toUpperCase()}
-                      </Badge>
-                      <Badge
-                        className={getPriorityColor(
-                          selectedOperation.priority as string
-                        )}
-                      >
-                        {selectedOperation.priority.toUpperCase()}
-                      </Badge>
-                    </div>
-                  </div>
+              <div>
+                <h3
+                  className="text-sm font-medium tracking-wider mb-2"
+                  style={{ color: "hsl(var(--neutral-300))" }}
+                >
+                  OPERATION DETAILS
+                </h3>
+                <p
+                  className="text-sm"
+                  style={{ color: "hsl(var(--neutral-300))" }}
+                >
+                  {selectedOperation.description}
+                </p>
+              </div>
 
-                  <div>
-                    <h3 className="text-sm font-medium text-neutral-300 tracking-wider mb-2">
-                      MISSION DETAILS
-                    </h3>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Location:</span>
-                        <span className="text-white">
-                          {selectedOperation.location as string}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Agents:</span>
-                        <span className="text-white font-mono">
-                          {selectedOperation.agents as number}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">Start Date:</span>
-                        <span className="text-white font-mono">
-                          {selectedOperation.startDate as string}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-neutral-400">
-                          Est. Completion:
-                        </span>
-                        <span className="text-white font-mono">
-                          {selectedOperation.estimatedCompletion as string}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <span style={{ color: "hsl(var(--neutral-400))" }}>
+                    Location:
+                  </span>
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
+                    {selectedOperation.location}
+                  </p>
                 </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-neutral-300 tracking-wider mb-2">
-                      PROGRESS
-                    </h3>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-neutral-400">Completion</span>
-                        <span className="text-white font-mono">
-                          {selectedOperation.progress as number}%
-                        </span>
-                      </div>
-                      <div className="w-full bg-neutral-800 rounded-full h-3">
-                        <div
-                          className="bg-orange-500 h-3 rounded-full transition-all duration-300"
-                          style={{
-                            width: `${selectedOperation.progress as number}%`,
-                          }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-medium text-neutral-300 tracking-wider mb-2">
-                      OBJECTIVES
-                    </h3>
-                    <div className="space-y-2">
-                      {selectedOperation.objectives.map(
-                        (objective: string, index: number) => (
-                          <div
-                            key={index}
-                            className="flex items-center gap-2 text-sm"
-                          >
-                            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                            <span className="text-neutral-300">
-                              {objective}
-                            </span>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  </div>
+                <div>
+                  <span style={{ color: "hsl(var(--neutral-400))" }}>
+                    Agents:
+                  </span>
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
+                    {selectedOperation.agents}
+                  </p>
+                </div>
+                <div>
+                  <span style={{ color: "hsl(var(--neutral-400))" }}>
+                    Start Date:
+                  </span>
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
+                    {selectedOperation.startDate}
+                  </p>
+                </div>
+                <div>
+                  <span style={{ color: "hsl(var(--neutral-400))" }}>
+                    Estimated Completion:
+                  </span>
+                  <p
+                    className="text-sm font-medium"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
+                    {selectedOperation.estimatedCompletion}
+                  </p>
                 </div>
               </div>
 
               <div>
-                <h3 className="text-sm font-medium text-neutral-300 tracking-wider mb-2">
-                  DESCRIPTION
+                <h3
+                  className="text-sm font-medium tracking-wider mb-2"
+                  style={{ color: "hsl(var(--neutral-300))" }}
+                >
+                  PROGRESS
                 </h3>
-                <p className="text-sm text-neutral-300">
-                  {selectedOperation.description as string}
+                <div
+                  className="w-full rounded-full h-3 mt-2"
+                  style={{ backgroundColor: "hsl(var(--neutral-800))" }}
+                >
+                  <div
+                    className="h-3 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${selectedOperation.progress}%`,
+                      backgroundColor: "hsl(var(--orange-500))",
+                    }}
+                  ></div>
+                </div>
+                <p
+                  className="text-sm mt-2"
+                  style={{ color: "hsl(var(--neutral-400))" }}
+                >
+                  {selectedOperation.progress}% complete
                 </p>
               </div>
 
-              <div className="flex gap-2 pt-4 border-t border-neutral-700">
-                <Button className="bg-orange-500 hover:bg-orange-600 text-white">
+              <div>
+                <h3
+                  className="text-sm font-medium tracking-wider mb-2"
+                  style={{ color: "hsl(var(--neutral-300))" }}
+                >
+                  OBJECTIVES
+                </h3>
+                <div className="space-y-2">
+                  {selectedOperation.objectives.map((objective, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: "hsl(var(--orange-500))" }}
+                      ></div>
+                      <span style={{ color: "hsl(var(--neutral-300))" }}>
+                        {objective}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3
+                  className="text-sm font-medium tracking-wider mb-2"
+                  style={{ color: "hsl(var(--neutral-300))" }}
+                >
+                  STATUS
+                </h3>
+                <p
+                  className="text-sm"
+                  style={{ color: "hsl(var(--neutral-300))" }}
+                >
+                  Operation is currently {selectedOperation.status}
+                </p>
+              </div>
+
+              <div
+                className="flex gap-2 pt-4 border-t"
+                style={{ borderTopColor: "hsl(var(--neutral-700))" }}
+              >
+                <Button
+                  style={{
+                    backgroundColor: "hsl(var(--orange-500))",
+                    color: "hsl(var(--foreground))",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor =
+                      "hsl(var(--orange-500) / 0.8)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor =
+                      "hsl(var(--orange-500))";
+                  }}
+                >
                   Update Status
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-neutral-700 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300 bg-transparent"
+                  style={{
+                    borderColor: "hsl(var(--neutral-700))",
+                    color: "hsl(var(--neutral-400))",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor =
+                      "hsl(var(--neutral-800))";
+                    e.currentTarget.style.color = "hsl(var(--neutral-300))";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                    e.currentTarget.style.color = "hsl(var(--neutral-400))";
+                  }}
                 >
-                  View Reports
+                  View Logs
                 </Button>
                 <Button
                   variant="outline"
-                  className="border-neutral-700 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-300 bg-transparent"
+                  style={{
+                    borderColor: "hsl(var(--neutral-700))",
+                    color: "hsl(var(--neutral-400))",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor =
+                      "hsl(var(--neutral-800))";
+                    e.currentTarget.style.color = "hsl(var(--neutral-300))";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                    e.currentTarget.style.color = "hsl(var(--neutral-400))";
+                  }}
                 >
-                  Assign Agents
+                  Edit Operation
                 </Button>
               </div>
             </CardContent>

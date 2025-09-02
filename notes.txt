@@ -1,0 +1,9 @@
+hackathon:
+- merge conflicts needs improvement
+    - accept+reject feature for merge conflicts
+
+- "run kite locally" 
+
+- rag feature
+
+- web dashboard
