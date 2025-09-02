@@ -6,7 +6,18 @@ import { ChatMessage } from './types';
 import { validateConfig } from './config';
 import { TokenStore } from './tokenStore';
 import { openBrowser } from './utils';
-import { parseMarkdownToText } from './markdownParser';
+import { parseMarkdownToText, hasMarkdown } from './markdownParser';
+import { SupermemoryClient } from './supermemoryClient';
+/** Save chat history using authenticated backend */
+async function saveChatHistory(messages: ChatMessage[], caller: GPTOSSToolCaller): Promise<void> {
+  const chatId = await caller.saveChatHistory(messages);
+}
+
+/** Load chat history using authenticated backend */
+async function loadChatHistory(caller: GPTOSSToolCaller): Promise<ChatMessage[]> {
+  const messages = await caller.loadChatHistory();
+  return messages;
+}
 
 /**
  * Poll for authentication completion

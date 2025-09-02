@@ -869,44 +869,15 @@ func (m *model) stopSpinner() {
 
 func (m *model) checkAuthOnStartup() tea.Cmd {
 	return func() tea.Msg {
-		// Check authentication status on startup
-		if m.auth != nil {
-			authenticated, err := m.auth.CheckAuthStatus()
-			if err != nil {
-				// Log error but don't show to user yet
-				log.Printf("Failed to check auth status on startup: %v", err)
-				return nil
-			}
-
-			if !authenticated {
-				// Return auth required message to trigger auth flow
-				return authRequiredMsg{}
-			}
-		}
+		// Authentication is now handled before startup, so no need to check here
 		return nil
 	}
 }
 
 func (m *model) startAuthFlow() tea.Cmd {
 	return func() tea.Msg {
-		// Start authentication in a goroutine
-		go func() {
-			if m.auth != nil {
-				if err := m.auth.StartAuthFlow(); err != nil {
-					// Send error message back to the UI
-					// We'll handle this by updating the UI directly
-					fmt.Printf("Authentication failed: %v\n", err)
-				} else {
-					// Authentication successful, update the UI
-					fmt.Println("✅ Authentication completed successfully!")
-				}
-			}
-		}()
-
-		// Return a command that will show a waiting message
-		return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-			return authCompleteMsg{}
-		})
+		// Authentication is now handled before startup, so no need to start auth flow here
+		return nil
 	}
 }
 
