@@ -30,8 +30,11 @@ async function testMultiTurnToolUse(): Promise<void> {
   try {
     console.log('🤖 Kite: ');
     
-    const response = await caller.callToolsMultiTurn(messages, 'medium');
-    console.log(response);
+    let response = '';
+    for await (const chunk of caller.callToolsStream(messages, 'medium')) {
+      process.stdout.write(chunk);
+      response += chunk;
+    }
     
     console.log('\n---');
     console.log('✅ Multi-turn test completed!');
