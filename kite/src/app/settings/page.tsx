@@ -63,6 +63,53 @@ export default function SettingsPage() {
   const user = useQuery(api.users.getCurrentUser);
   const userSettings = useQuery(api.users.getUserSettings);
 
+  // Delete account mutation
+  const deleteUserAccount = useMutation(api.users.deleteUserAccount);
+
+  // Handle account deletion
+  const handleDeleteAccount = async () => {
+    if (!clerkUser) return;
+
+    try {
+      setIsDeleting(true);
+
+      // First, delete all user data from our database
+      await deleteUserAccount();
+
+      // Then delete the user account from Clerk (with verification)
+      await deleteUserFromClerk(clerkUser);
+
+      // Sign out the user
+      await signOut();
+
+      // Show success message
+      alert(
+        "Account deleted successfully. You will be redirected to the home page."
+      );
+
+      // Redirect to home page
+      router.push("/");
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      setIsDeleting(false);
+
+      // Show error message to user
+      if (error instanceof Error) {
+        alert(`Failed to delete account: ${error.message}`);
+      } else {
+        alert("Failed to delete account. Please try again or contact support.");
+      }
+    }
+  };
+
+  // Handle dialog close and reset states
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      setIsDeleting(false);
+    }
+    setShowDeleteDialog(open);
+  };
+
   // Memoize tabs to prevent unnecessary re-renders
   const tabs = useMemo(
     () => [
@@ -154,24 +201,24 @@ export default function SettingsPage() {
         icon: Rocket,
         title: "Access to All Models",
         description: isPro
-          ? "You have access to our full suite of models including Claude, o3-mini-high, and more!"
-          : "Upgrade to Pro to get access to our full suite of models including Claude, o3-mini-high, and more!",
+          ? "You have access to our full suite of models including Claude, o3-mini-high, and more!<br/>"
+          : "Upgrade to Pro to get access to our full suite of models including <span class='font-bold'>GPT-5, Gemini, and more!</span>",
         available: isPro,
       },
       {
         icon: Zap,
         title: "Generous Limits",
         description: isPro
-          ? `You receive **${userData.standardUsage.total} standard credits** per month, plus **${userData.premiumUsage.total} premium credits*** per month.`
-          : "Upgrade to Pro to receive **1500 standard credits** per month, plus **100 premium credits*** per month.",
+          ? `You receive <span class='font-bold'>${userData.standardUsage.total} standard credits</span> per month, plus <span class='font-bold'>${userData.premiumUsage.total} premium credits</span> per month.`
+          : "Upgrade to Pro to receive <span class='font-bold'>1500 standard credits</span> per month, plus <span class='font-bold'>100 premium credits</span> per month.",
         available: isPro,
       },
       {
         icon: Headphones,
         title: "Priority Support",
         description: isPro
-          ? "You get faster responses and dedicated assistance from the T3 team whenever you need help!"
-          : "Upgrade to Pro to get faster responses and dedicated assistance from the T3 team whenever you need help!",
+          ? "You get faster responses and dedicated assistance from the Kite team whenever you need help!"
+          : "Upgrade to Pro to get faster responses and dedicated assistance from the Kite team whenever you need help!",
         available: isPro,
       },
     ];
@@ -243,7 +290,7 @@ export default function SettingsPage() {
             style={{ borderColor: "hsl(var(--primary))" }}
           ></div>
           <p style={{ color: "hsl(var(--muted-foreground))" }}>
-            Loading user profile from Convex...
+            Loading your profile...
           </p>
           <p
             className="text-xs mt-2"
@@ -263,17 +310,21 @@ export default function SettingsPage() {
         style={{ backgroundColor: "hsl(var(--background))" }}
       >
         <div className="text-center">
-          <p className="text-lg mb-4" style={{ color: "hsl(var(--warning))" }}>
-            User profile not found
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
+            style={{ borderColor: "hsl(var(--primary))" }}
+          ></div>
+          <p className="text-lg mb-4" style={{ color: "hsl(var(--primary))" }}>
+            Setting up your profile...
           </p>
           <p style={{ color: "hsl(var(--muted-foreground))" }}>
-            Your profile is being created...
+            Creating your account in our system
           </p>
           <p
             className="text-xs mt-2"
             style={{ color: "hsl(var(--muted-foreground))" }}
           >
-            Please wait or refresh the page
+            Please wait while we set up your account
           </p>
         </div>
       </div>
@@ -296,64 +347,28 @@ export default function SettingsPage() {
           backgroundColor: "hsl(var(--card))",
         }}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <button
-              onClick={handleBackToDashboard}
-              className="flex items-center gap-2 transition-colors hover:underline"
-              style={{
-                color: "hsl(var(--muted-foreground))",
-                textDecorationColor: "hsl(var(--orange-500))",
-              }}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Dashboard
-            </button>
-
-            {/* Navigation Tabs */}
-            <div className="flex gap-1">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => handleTabClick(tab.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                      activeTab === tab.id
-                        ? "text-white"
-                        : "hover:text-white hover:bg-opacity-20"
-                    }`}
-                    style={{
-                      backgroundColor:
-                        activeTab === tab.id
-                          ? "hsl(var(--primary))"
-                          : "transparent",
-                      color:
-                        activeTab === tab.id
-                          ? "hsl(var(--primary-foreground))"
-                          : "hsl(var(--muted-foreground))",
-                    }}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={handleBackToDashboard}
+            className="flex items-center gap-2 transition-colors hover:underline"
+            style={{
+              color: "hsl(var(--muted-foreground))",
+              textDecorationColor: "hsl(var(--orange-500))",
+            }}
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </button>
 
           <div className="flex items-center gap-4">
-            <button
-              className="transition-colors"
-              style={{ color: "hsl(var(--muted-foreground))" }}
-            >
-              <Sun className="w-5 h-5" />
-            </button>
             {isSignedIn ? (
               <SignOutButton>
                 <button
-                  className="transition-colors"
-                  style={{ color: "hsl(var(--muted-foreground))" }}
+                  className="transition-colors hover:underline hover:underline-offset-2"
+                  style={{
+                    color: "hsl(var(--muted-foreground))",
+                    textDecorationColor: "hsl(var(--orange-500))",
+                  }}
                 >
                   Sign out
                 </button>
@@ -368,6 +383,39 @@ export default function SettingsPage() {
                 </button>
               </SignInButton>
             )}
+          </div>
+        </div>
+
+        {/* Centered Navigation Tabs */}
+        <div className="flex justify-center">
+          <div className="flex gap-1">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabClick(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                    activeTab === tab.id
+                      ? "text-white"
+                      : "hover:text-white hover:bg-opacity-20"
+                  }`}
+                  style={{
+                    backgroundColor:
+                      activeTab === tab.id
+                        ? "hsl(var(--primary))"
+                        : "transparent",
+                    color:
+                      activeTab === tab.id
+                        ? "hsl(var(--primary-foreground))"
+                        : "hsl(var(--muted-foreground))",
+                  }}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -415,16 +463,6 @@ export default function SettingsPage() {
               >
                 {userData.email}
               </p>
-
-              {/* Bio */}
-              {userData.bio && (
-                <p
-                  className="text-sm mb-3 italic"
-                  style={{ color: "hsl(var(--muted-foreground))" }}
-                >
-                  "{userData.bio}"
-                </p>
-              )}
 
               {/* Location */}
               {userData.location && (
@@ -657,7 +695,7 @@ export default function SettingsPage() {
                 <div className="text-center mb-6">
                   {userData.planType === "free" ? (
                     <Button
-                      className="px-8 py-3 text-lg"
+                      className="hover:cursor-pointer px-8 py-3 text-lg"
                       style={{
                         backgroundColor: "hsl(var(--primary))",
                         color: "hsl(var(--primary-foreground))",
@@ -676,15 +714,6 @@ export default function SettingsPage() {
                       Manage Subscription
                     </Button>
                   )}
-                  <p
-                    className="text-sm mt-3"
-                    style={{ color: "hsl(var(--muted-foreground))" }}
-                  >
-                    * Premium credits are used for GPT Image Gen, o3, Claude
-                    Sonnet, Gemini 2.5 Pro, GPT 5 (Reasoning), and Grok 3/4.
-                    Additional Premium credits can be purchased separately for
-                    $8 per 100.
-                  </p>
                 </div>
               </div>
 
@@ -747,9 +776,7 @@ export default function SettingsPage() {
                 }}
               >
                 <CardHeader>
-                  <CardTitle style={{ color: "hsl(var(--destructive))" }}>
-                    Danger Zone
-                  </CardTitle>
+                  <CardTitle className="text-red-500 ">Danger Zone</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
@@ -767,14 +794,52 @@ export default function SettingsPage() {
                         Permanently delete your account and all associated data.
                       </p>
                     </div>
-                    <Button
-                      style={{
-                        backgroundColor: "hsl(var(--destructive))",
-                        color: "hsl(var(--destructive-foreground))",
-                      }}
+                    <AlertDialog
+                      open={showDeleteDialog}
+                      onOpenChange={handleDialogClose}
                     >
-                      Delete Account
-                    </Button>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          className="hover:cursor-pointer bg-red-500 hover:bg-red-600"
+                          onClick={() => setShowDeleteDialog(true)}
+                        >
+                          Delete Account
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent
+                        className="max-w-md"
+                        style={{
+                          backgroundColor: "hsl(var(--card))",
+                          borderColor: "hsl(var(--border))",
+                        }}
+                      >
+                        un
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="text-red-500">
+                            Are you absolutely sure?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently
+                            delete your account and remove your data from our
+                            servers.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel
+                            onClick={() => handleDialogClose(false)}
+                          >
+                            Cancel
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleDeleteAccount}
+                            className="bg-red-500 hover:bg-red-600"
+                            disabled={isDeleting}
+                          >
+                            {isDeleting ? "Deleting..." : "Delete Account"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </CardContent>
               </Card>
@@ -823,13 +888,14 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[
                       {
-                        name: "GPT-OSS",
+                        name: "GPT-OSS-120B",
                         description:
-                          "Latest GPT model with improved reasoning and coding capabilities",
+                          "Latest open-weight GPT model from OpenAI, featuring enhanced reasoning and advanced coding capabilities",
                         capabilities: [
-                          "Text Generation",
-                          "Code Analysis",
-                          "Reasoning",
+                          "Function Calling",
+                          "Web Browsing",
+                          "Python Code Execution",
+                          "and more!",
                         ],
                         status: "Available",
                         statusColor:
@@ -1073,11 +1139,11 @@ export default function SettingsPage() {
                             color: "hsl(var(--foreground))",
                           }}
                         >
-                          <option value="gpt-4o">GPT-4o</option>
+                          <option value="gpt-4o">GPT-OSS-120B</option>
                           <option value="claude-3.5-sonnet">
-                            Claude 3.5 Sonnet
+                            Claude-4-Sonnet
                           </option>
-                          <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                          <option value="gemini-1.5-pro">Gemini 2.5 Pro</option>
                         </select>
                       </div>
 
@@ -1272,7 +1338,34 @@ export default function SettingsPage() {
             </>
           )}
 
+          {activeTab === "contact" && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Contact Us</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p>Contact us for any questions or feedback.</p>
+                </CardContent>
+              </Card>
+            </>
+          )}
+          {activeTab === "api" && (
+            <>
+              <Card>
+                <CardHeader className="text-center">
+                  <CardTitle className="text-center">API Keys</CardTitle>
+                </CardHeader>
+              </Card>
+              <p className="text-center">
+                Bring your own API keys to use Kite.
+              </p>
+              <p className="text-center">Coming Soon...</p>
+            </>
+          )}
           {activeTab !== "profile" &&
+            activeTab !== "api" &&
+            activeTab !== "contact" &&
             activeTab !== "models" &&
             activeTab !== "customization" && (
               <div className="text-center py-12">
