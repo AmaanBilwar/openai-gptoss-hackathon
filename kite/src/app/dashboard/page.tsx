@@ -118,11 +118,12 @@ export default function Dashboard() {
               { id: "agents", icon: Users, label: "Agent Network" },
               { id: "operations", icon: Target, label: "Operations" },
               { id: "intelligence", icon: Shield, label: "Intelligence" },
+              { id: "chats", icon: MessageCircle, label: "Chats" },
             ].map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveSection(item.id)}
-                className={`w-full flex items-center gap-3 p-3 rounded transition-colors dashboard-nav-item`}
+                className={`w-full hover:cursor-pointer flex items-center gap-3 p-3 rounded transition-colors dashboard-nav-item`}
                 style={{
                   backgroundColor:
                     activeSection === item.id
