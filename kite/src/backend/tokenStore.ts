@@ -44,23 +44,11 @@ export class TokenStore {
    * Save Convex token to secure storage
    */
   async saveConvexToken(token: string): Promise<void> {
-    await this.initializeKeyring();
-    
     const tokenData: TokenData = {
       access_token: token,
       created_at: new Date().toISOString()
     };
 
-    if (this.keyring) {
-      try {
-        await this.keyring.setPassword(this.convexServiceName, 'token', JSON.stringify(tokenData));
-        return;
-      } catch (error) {
-        console.warn('Failed to save Convex token to keyring, falling back to file storage:', error);
-      }
-    }
-
-    // Fallback to file storage
     try {
       await fs.promises.writeFile(this.convexFilename, JSON.stringify(tokenData, null, 2), 'utf8');
       // Set restrictive permissions on the token file
@@ -110,17 +98,6 @@ export class TokenStore {
    * Delete token from storage
    */
   async delete(): Promise<void> {
-    await this.initializeKeyring();
-    
-    if (this.keyring) {
-      try {
-        await this.keyring.deletePassword(this.serviceName, 'token');
-        return;
-      } catch (error) {
-        console.warn('Failed to delete token from keyring:', error);
-      }
-    }
-
     try {
       if (fs.existsSync(this.filename)) {
         await fs.promises.unlink(this.filename);
@@ -134,17 +111,6 @@ export class TokenStore {
    * Delete Convex token from storage
    */
   async deleteConvexToken(): Promise<void> {
-    await this.initializeKeyring();
-    
-    if (this.keyring) {
-      try {
-        await this.keyring.deletePassword(this.convexServiceName, 'token');
-        return;
-      } catch (error) {
-        console.warn('Failed to delete Convex token from keyring:', error);
-      }
-    }
-
     try {
       if (fs.existsSync(this.convexFilename)) {
         await fs.promises.unlink(this.convexFilename);
@@ -174,19 +140,6 @@ export class TokenStore {
    * Get token data with metadata
    */
   async getTokenData(): Promise<TokenData | null> {
-    await this.initializeKeyring();
-    
-    if (this.keyring) {
-      try {
-        const tokenJson = await this.keyring.getPassword(this.serviceName, 'token');
-        if (tokenJson) {
-          return JSON.parse(tokenJson);
-        }
-      } catch (error) {
-        console.warn('Failed to load token data from keyring:', error);
-      }
-    }
-
     if (!fs.existsSync(this.filename)) {
       return null;
     }
@@ -204,19 +157,6 @@ export class TokenStore {
    * Get Convex token data with metadata
    */
   async getConvexTokenData(): Promise<TokenData | null> {
-    await this.initializeKeyring();
-    
-    if (this.keyring) {
-      try {
-        const tokenJson = await this.keyring.getPassword(this.convexServiceName, 'token');
-        if (tokenJson) {
-          return JSON.parse(tokenJson);
-        }
-      } catch (error) {
-        console.warn('Failed to load Convex token data from keyring:', error);
-      }
-    }
-
     if (!fs.existsSync(this.convexFilename)) {
       return null;
     }
