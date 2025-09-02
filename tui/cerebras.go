@@ -113,15 +113,18 @@ type CerebrasClient struct {
 
 // NewCerebrasClient creates a new Cerebras client
 func NewCerebrasClient() (*CerebrasClient, error) {
-	// Load .env file if it exists
-	if err := godotenv.Load(); err != nil {
-		// It's okay if .env doesn't exist, we'll fall back to system environment
-		fmt.Printf("Note: .env file not found, using system environment variables\n")
+	// Load .env.local file if it exists, fall back to .env if not
+	if err := godotenv.Load(".env.local"); err != nil {
+		// Try loading .env file as fallback
+		if err := godotenv.Load(); err != nil {
+			// It's okay if neither exists, we'll fall back to system environment
+			fmt.Printf("Note: .env.local and .env files not found, using system environment variables\n")
+		}
 	}
 
 	apiKey := os.Getenv("CEREBRAS_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("CEREBRAS_API_KEY environment variable not set. Please set it in your .env file or system environment")
+		return nil, fmt.Errorf("CEREBRAS_API_KEY environment variable not set. Please set it in your .env.local file, .env file, or system environment")
 	}
 
 	// Initialize backend client

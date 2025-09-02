@@ -357,3 +357,72 @@ export const updateUserPlan = mutation({
     return true;
   },
 });
+
+// Delete user account and all associated data
+export const deleteUserAccount = mutation({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const userId = identity.subject;
+
+    try {
+      // Delete all user activities
+      const activities = await ctx.db
+        .query("activities")
+        .withIndex("by_user_id", (q) => q.eq("userId", userId))
+        .collect();
+      
+      for (const activity of activities) {
+        await ctx.db.delete(activity._id);
+      }
+
+      // Delete all user chats
+      const chats = await ctx.db
+        .query("chats")
+        .withIndex("by_user_id", (q) => q.eq("userId", userId))
+        .collect();
+      
+      for (const chat of chats) {
+        await ctx.db.delete(chat._id);
+      }
+
+      // Delete all user repositories
+      const repositories = await ctx.db
+        .query("repositories")
+        .withIndex("by_user_id", (q) => q.eq("userId", userId))
+        .collect();
+      
+      for (const repo of repositories) {
+        await ctx.db.delete(repo._id);
+      }
+
+      // Delete user settings
+      const settings = await ctx.db
+        .query("settings")
+        .withIndex("by_user_id", (q) => q.eq("userId", userId))
+        .unique();
+      
+      if (settings) {
+        await ctx.db.delete(settings._id);
+      }
+
+      // Delete user profile
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_user_id", (q) => q.eq("userId", userId))
+        .unique();
+      
+      if (user) {
+        await ctx.db.delete(user._id);
+      }
+
+      return true;
+    } catch (error) {
+      console.error("Error deleting user account:", error);
+      throw new Error("Failed to delete user account");
+    }
+  },
+});
