@@ -23,53 +23,17 @@ export class TokenStore {
     this.convexFilename = path.join(os.homedir(), '.convex_token');
   }
 
-  /**
-   * Initialize keyring if available
-   */
-  private async initializeKeyring(): Promise<void> {
-    if (this.keyringInitialized) {
-      return;
-    }
 
-    // Only try to load keyring in Node.js environment
-    if (typeof globalThis !== 'undefined' && typeof process !== 'undefined') {
-      try {
-        // Use dynamic import to avoid bundling issues
-        const keyringModule = await import('keyring');
-        this.keyring = keyringModule.default || keyringModule;
-        this.keyringInitialized = true;
-      } catch (error) {
-        console.warn('Keyring not available, falling back to file storage:', error);
-        this.keyring = null;
-        this.keyringInitialized = true;
-      }
-    } else {
-      this.keyring = null;
-      this.keyringInitialized = true;
-    }
-  }
 
   /**
    * Save token to secure storage
    */
   async save(token: string): Promise<void> {
-    await this.initializeKeyring();
-    
     const tokenData: TokenData = {
       access_token: token,
       created_at: new Date().toISOString()
     };
 
-    if (this.keyring) {
-      try {
-        await this.keyring.setPassword(this.serviceName, 'token', JSON.stringify(tokenData));
-        return;
-      } catch (error) {
-        console.warn('Failed to save token to keyring, falling back to file storage:', error);
-      }
-    }
-
-    // Fallback to file storage
     try {
       await fs.promises.writeFile(this.filename, JSON.stringify(tokenData, null, 2), 'utf8');
       // Set restrictive permissions on the token file
