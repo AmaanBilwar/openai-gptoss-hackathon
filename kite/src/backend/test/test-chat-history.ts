@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
 
-import { GPTOSSToolCaller } from './toolCalling';
-import { ChatMessage } from './types';
-import { validateConfig } from './config';
+import { GPTOSSToolCaller } from '../toolCalling';
+import { ChatMessage } from '../types';
+import { validateConfig } from '../config';
 
 async function testChatHistory(): Promise<void> {
   try {

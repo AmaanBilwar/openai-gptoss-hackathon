@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { parseMarkdownToHtml, parseMarkdownToText, hasMarkdown } from './markdownParser';
+import { parseMarkdownToHtml, parseMarkdownToText, hasMarkdown } from '../markdownParser';
 
 console.log('🧪 Testing Simple Markdown Parser\n');
 
