@@ -81,13 +81,34 @@ export async function startInteractiveChat(): Promise<void> {
 
   const caller = new GPTOSSToolCaller('gpt-oss-120b', {
     supermemoryApiKey: process.env.SUPERMEMORY_API_KEY,
-    smUserId: process.env.CLI_USER_ID || 'cli-user'
+    smUserId: undefined // Will be resolved from authentication
   });
-  const messages: ChatMessage[] = [];
+  
+  // Initialize SuperMemory client for infinite chat
+  let supermemoryClient: SupermemoryClient | null = null;
+  if (process.env.SUPERMEMORY_API_KEY) {
+    try {
+      supermemoryClient = new SupermemoryClient(process.env.SUPERMEMORY_API_KEY);
+      console.log('🧠 SuperMemory Infinite Chat enabled');
+    } catch (error) {
+      console.warn('⚠️  SuperMemory initialization failed:', error);
+    }
+  }
+  
+  // Check if backend is available
+  console.log('💡 Make sure the web server is running with "bun run dev" for full functionality\n');
+  
+  // Load previous chat history for infinite chat
+  const messages: ChatMessage[] = await loadChatHistory(caller);
+  if (messages.length > 0) {
+    console.log(`📚 Loaded ${messages.length} previous messages for infinite chat context`);
+    console.log('💡 Your conversation continues from where you left off!\n');
+  }
 
   console.log('Welcome to Kite! Your AI-powered GitHub assistant.');
   console.log('Type your requests and I\'ll help you manage your repositories.');
-  console.log('Type "exit" or "quit" to end the session.\n');
+  console.log('Type "exit" or "quit" to end the session.');
+  console.log('Type "help" or "?" for available commands.\n');
 
   // Create readline interface with better Windows support
   const rl = readline.createInterface({

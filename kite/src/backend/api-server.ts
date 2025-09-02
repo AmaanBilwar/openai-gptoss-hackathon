@@ -62,6 +62,15 @@ app.post('/api/tools/execute', async (req, res) => {
       });
     }
 
+    // Check authentication
+    const hasAuth = await tokenStore.getConvexToken();
+    if (!hasAuth) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
     // Execute the tool with activity logging
     const toolCall = {
       function: {

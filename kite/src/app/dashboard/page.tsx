@@ -9,6 +9,7 @@ import {
   Users,
   Bell,
   RefreshCw,
+  MessageCircle,
 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { useMemo } from "react";

@@ -12,7 +12,7 @@ import {
   CerebrasResponse
 } from './types';
 import { CEREBRAS_API_KEY, validateConfig } from './config';
-import { parseMarkdownToText } from './markdownParser';
+
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { ConvexHttpClient } from "convex/browser";
@@ -1287,22 +1287,47 @@ Instructions:
     reasoningLevel: string = 'medium'
   ): AsyncGenerator<string> {
     const systemPrompt = this.getSystemPrompt(reasoningLevel);
+    if (process.env.DEBUG_SYSTEM_PROMPT === '1') {
+      console.log('[DEBUG] System prompt start:\n' + systemPrompt.slice(0, 400) + (systemPrompt.length > 400 ? '... [truncated]' : ''));
+    }
     
     // Prepare initial messages for Cerebras API
-    const apiMessages: any[] = [
+    const apiMessages: CerebrasMessage[] = [
       {
         role: 'system',
         content: systemPrompt
       }
     ];
     
-    // Add user messages
+    // Add user messages and ensure tool calls have proper IDs
     for (const message of messages) {
       if (message.role === 'user') {
         apiMessages.push({
           role: 'user',
           content: message.content
         });
+      } else if (message.role === 'assistant') {
+        // For assistant messages, we need to check if they have tool calls
+        const assistantMessage: CerebrasMessage = {
+          role: 'assistant',
+          content: message.content || ''
+        };
+        
+        // If the message has tool calls, ensure they have proper IDs
+        if ((message as any).tool_calls) {
+          const sanitizedToolCalls = (message as any).tool_calls.map((toolCall: any, index: number) => ({
+            id: toolCall.id || `tool_${Date.now()}_${index}_${Math.random()}`,
+            type: 'function' as const,
+            function: {
+              name: toolCall.function?.name || '',
+              arguments: toolCall.function?.arguments || '{}'
+            }
+          }));
+          
+          assistantMessage.tool_calls = sanitizedToolCalls;
+        }
+        
+        apiMessages.push(assistantMessage);
       }
     }
     
@@ -1370,26 +1395,25 @@ Instructions:
             yield `\n\n${userMessage}`;
             
             // Add tool response to conversation for next turn
-            const toolMessage = {
+            const toolMessage: CerebrasMessage = {
               role: 'tool',
               content: JSON.stringify(result),
-              tool_call_id: toolCall.id
+              tool_call_id: toolCall.id || `tool_${Date.now()}_${toolCall.index || 0}_${Math.random()}`
             };
             
-            console.log(`Turn ${turnCount}: Adding tool response for call ${toolCall.id}`);
             apiMessages.push(toolMessage);
             
           } catch (error) {
-            console.error(`Turn ${turnCount}: Error executing tool call ${toolCall.id}:`, error);
+            console.error(`Turn ${turnCount}: Error executing tool call:`, error);
             
             const errorMessage = `❌ Error executing tool: ${error instanceof Error ? error.message : 'Unknown error'}`;
             yield `\n\n${errorMessage}`;
             
             // Add error response to conversation
-            const errorToolMessage = {
+            const errorToolMessage: CerebrasMessage = {
               role: 'tool',
               content: JSON.stringify({ success: false, error: errorMessage }),
-              tool_call_id: toolCall.id
+              tool_call_id: toolCall.id || `tool_${Date.now()}_${toolCall.index || 0}_${Math.random()}`
             };
             
             apiMessages.push(errorToolMessage);
@@ -2042,16 +2066,7 @@ Instructions:
     ].includes(toolName);
   }
 
-  /**
-   * Non-streaming version for simpler use cases
-   */
-  async callTools(messages: ChatMessage[], reasoningLevel: string = 'medium'): Promise<string> {
-    let response = '';
-    for await (const chunk of this.callToolsStream(messages, reasoningLevel)) {
-      response += chunk;
-    }
-    return response;
-  }
+
 
   private async logActivity(
     toolName: string, 

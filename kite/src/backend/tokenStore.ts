@@ -113,21 +113,6 @@ export class TokenStore {
    * Load token from secure storage
    */
   async load(): Promise<string | null> {
-    await this.initializeKeyring();
-    
-    if (this.keyring) {
-      try {
-        const tokenJson = await this.keyring.getPassword(this.serviceName, 'token');
-        if (tokenJson) {
-          const tokenData: TokenData = JSON.parse(tokenJson);
-          return tokenData.access_token;
-        }
-      } catch (error) {
-        console.warn('Failed to load token from keyring, trying file storage:', error);
-      }
-    }
-
-    // Fallback to file storage
     if (!fs.existsSync(this.filename)) {
       return null;
     }
@@ -146,21 +131,6 @@ export class TokenStore {
    * Load Convex token from secure storage
    */
   async getConvexToken(): Promise<string | null> {
-    await this.initializeKeyring();
-    
-    if (this.keyring) {
-      try {
-        const tokenJson = await this.keyring.getPassword(this.convexServiceName, 'token');
-        if (tokenJson) {
-          const tokenData: TokenData = JSON.parse(tokenJson);
-          return tokenData.access_token;
-        }
-      } catch (error) {
-        console.warn('Failed to load Convex token from keyring, trying file storage:', error);
-      }
-    }
-
-    // Fallback to file storage
     if (!fs.existsSync(this.convexFilename)) {
       return null;
     }
