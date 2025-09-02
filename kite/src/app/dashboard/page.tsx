@@ -9,6 +9,8 @@ import {
   Users,
   Bell,
   RefreshCw,
+  Moon,
+  Sun,
 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { useMemo } from "react";
@@ -20,6 +22,7 @@ import AgentNetworkPage from "./agent-network/page";
 import OperationsPage from "./operations/page";
 import IntelligencePage from "./intelligence/page";
 import { useQuery } from "convex/react";
+import { useTheme } from "@/components/ThemeProvider";
 
 export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("overview");
@@ -27,6 +30,7 @@ export default function Dashboard() {
   const { isLoaded, isSignedIn, user } = useUser();
   const userData = useQuery(api.users.getCurrentUser);
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
 
   // Memoize user data with fallbacks to prevent unnecessary re-renders
   const displayUserData = useMemo(() => {
@@ -72,8 +76,8 @@ export default function Dashboard() {
       <div
         className={`${sidebarCollapsed ? "w-16" : "w-70"} border-r transition-all duration-300 fixed md:relative z-50 md:z-auto h-full md:h-auto ${!sidebarCollapsed ? "md:block" : ""}`}
         style={{
-          backgroundColor: "hsl(var(--neutral-900))",
-          borderColor: "hsl(var(--neutral-700))",
+          backgroundColor: "hsl(var(--sidebar))",
+          borderColor: "hsl(var(--sidebar-border))",
         }}
       >
         <div className="p-4 h-full flex flex-col">
@@ -81,7 +85,7 @@ export default function Dashboard() {
             <div className={`${sidebarCollapsed ? "hidden" : "block"}`}>
               <h1
                 style={{
-                  color: "hsl(var(--orange-500))",
+                  color: "hsl(var(--sidebar-primary))",
                   fontWeight: "bold",
                   fontSize: "1.125rem",
                   letterSpacing: "0.05em",
@@ -91,24 +95,40 @@ export default function Dashboard() {
               </h1>
               <p
                 style={{
-                  color: "hsl(var(--neutral-500))",
+                  color: "hsl(var(--sidebar-foreground))",
                   fontSize: "0.75rem",
                 }}
               >
                 V 0.1 CONTROL PANEL
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              style={{ color: "hsl(var(--neutral-400))" }}
-              className="dashboard-button-hover"
-            >
-              <ChevronRight
-                className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform ${sidebarCollapsed ? "" : "rotate-180"}`}
-              />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+                style={{ color: "hsl(var(--sidebar-foreground))" }}
+                className="dashboard-button-hover"
+                title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              >
+                {theme === "light" ? (
+                  <Moon className="w-4 h-4" />
+                ) : (
+                  <Sun className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                style={{ color: "hsl(var(--sidebar-foreground))" }}
+                className="dashboard-button-hover"
+              >
+                <ChevronRight
+                  className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform ${sidebarCollapsed ? "" : "rotate-180"}`}
+                />
+              </Button>
+            </div>
           </div>
 
           <nav className="space-y-2 flex-1">
@@ -125,12 +145,12 @@ export default function Dashboard() {
                 style={{
                   backgroundColor:
                     activeSection === item.id
-                      ? "hsl(var(--orange-500))"
+                      ? "hsl(var(--sidebar-primary))"
                       : "transparent",
                   color:
                     activeSection === item.id
-                      ? "hsl(var(--foreground))"
-                      : "hsl(var(--neutral-400))",
+                      ? "hsl(var(--sidebar-primary-foreground))"
+                      : "hsl(var(--sidebar-foreground))",
                 }}
               >
                 <item.icon className="w-5 h-5 md:w-5 md:h-5 sm:w-6 sm:h-6" />
@@ -147,8 +167,8 @@ export default function Dashboard() {
               onClick={handleSettingsClick}
               className="mt-auto p-4 border rounded transition-colors cursor-pointer text-left w-full dashboard-user-section"
               style={{
-                borderColor: "hsl(var(--neutral-700))",
-                color: "hsl(var(--foreground))",
+                borderColor: "hsl(var(--sidebar-border))",
+                color: "hsl(var(--sidebar-foreground))",
               }}
             >
               <div className="flex items-center gap-3">
@@ -156,12 +176,12 @@ export default function Dashboard() {
                 {!userData ? (
                   // Loading state
                   <div
-                    style={{ backgroundColor: "hsl(var(--neutral-700))" }}
+                    style={{ backgroundColor: "hsl(var(--sidebar-accent))" }}
                     className="w-10 h-10 rounded-full flex items-center justify-center animate-pulse"
                   >
                     <div
                       style={{
-                        borderColor: "hsl(var(--neutral-500))",
+                        borderColor: "hsl(var(--sidebar-foreground))",
                         borderTopColor: "transparent",
                       }}
                       className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
@@ -176,11 +196,13 @@ export default function Dashboard() {
                   />
                 ) : (
                   <div
-                    style={{ backgroundColor: "hsl(var(--purple-600))" }}
+                    style={{ backgroundColor: "hsl(var(--sidebar-primary))" }}
                     className="w-10 h-10 rounded-full flex items-center justify-center"
                   >
                     <span
-                      style={{ color: "hsl(var(--foreground))" }}
+                      style={{
+                        color: "hsl(var(--sidebar-primary-foreground))",
+                      }}
                       className="text-sm font-bold"
                     >
                       {displayUserData.name?.charAt(0)?.toUpperCase() || "U"}
@@ -191,11 +213,11 @@ export default function Dashboard() {
                 {/* User Info */}
                 <div className="flex flex-col">
                   <div
-                    style={{ color: "hsl(var(--foreground))" }}
+                    style={{ color: "hsl(var(--sidebar-foreground))" }}
                     className="text-sm font-medium"
                   >
                     {!userData ? (
-                      <span style={{ color: "hsl(var(--neutral-500))" }}>
+                      <span style={{ color: "hsl(var(--sidebar-foreground))" }}>
                         Loading...
                       </span>
                     ) : (
@@ -203,7 +225,7 @@ export default function Dashboard() {
                     )}
                   </div>
                   <div
-                    style={{ color: "hsl(var(--neutral-400))" }}
+                    style={{ color: "hsl(var(--sidebar-accent-foreground))" }}
                     className="text-xs"
                   >
                     {userData?.planType === "pro" ||

@@ -279,7 +279,7 @@ body {
 }
 
 .dashboard-button-hover:hover {
-  color: hsl(var(--orange-500)) !important;
+  color: hsl(var(--sidebar-primary)) !important;
 }
 
 .dashboard-nav-item {
@@ -287,10 +287,10 @@ body {
 }
 
 .dashboard-nav-item:hover {
-  background-color: hsl(var(--neutral-800));
-  color: hsl(var(--foreground));
+  background-color: hsl(var(--sidebar-accent));
+  color: hsl(var(--sidebar-foreground));
 }
 
 .dashboard-user-section:hover {
-  background-color: hsl(var(--neutral-800));
+  background-color: hsl(var(--sidebar-accent));
 }

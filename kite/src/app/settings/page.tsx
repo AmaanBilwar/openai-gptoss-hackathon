@@ -49,7 +49,7 @@ export default function SettingsPage() {
       { id: "history", label: "History & Sync", icon: Database },
       { id: "models", label: "Models", icon: Rocket },
       { id: "api", label: "API Keys", icon: Key },
-      { id: "attachments", label: "Attachments", icon: Globe },
+      // { id: "attachments", label: "Attachments", icon: Globe },
       { id: "contact", label: "Contact Us", icon: Bell },
     ],
     []
@@ -171,10 +171,18 @@ export default function SettingsPage() {
   // Better loading and error states
   if (!clerkLoaded) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "hsl(var(--background))" }}
+      >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <p className="text-neutral-400">Loading Clerk authentication...</p>
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
+            style={{ borderColor: "hsl(var(--primary))" }}
+          ></div>
+          <p style={{ color: "hsl(var(--muted-foreground))" }}>
+            Loading Clerk authentication...
+          </p>
         </div>
       </div>
     );
@@ -182,10 +190,20 @@ export default function SettingsPage() {
 
   if (!isSignedIn) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "hsl(var(--background))" }}
+      >
         <div className="text-center">
-          <p className="text-red-400 text-lg mb-4">Not authenticated</p>
-          <p className="text-neutral-400">Please sign in to access settings</p>
+          <p
+            className="text-lg mb-4"
+            style={{ color: "hsl(var(--destructive))" }}
+          >
+            Not authenticated
+          </p>
+          <p style={{ color: "hsl(var(--muted-foreground))" }}>
+            Please sign in to access settings
+          </p>
         </div>
       </div>
     );
@@ -193,13 +211,22 @@ export default function SettingsPage() {
 
   if (user === undefined) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "hsl(var(--background))" }}
+      >
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <p className="text-neutral-400">
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
+            style={{ borderColor: "hsl(var(--primary))" }}
+          ></div>
+          <p style={{ color: "hsl(var(--muted-foreground))" }}>
             Loading user profile from Convex...
           </p>
-          <p className="text-xs text-neutral-500 mt-2">
+          <p
+            className="text-xs mt-2"
+            style={{ color: "hsl(var(--muted-foreground))" }}
+          >
             This may take a moment on first visit
           </p>
         </div>
@@ -209,11 +236,21 @@ export default function SettingsPage() {
 
   if (user === null) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: "hsl(var(--background))" }}
+      >
         <div className="text-center">
-          <p className="text-yellow-400 text-lg mb-4">User profile not found</p>
-          <p className="text-neutral-400">Your profile is being created...</p>
-          <p className="text-xs text-neutral-500 mt-2">
+          <p className="text-lg mb-4" style={{ color: "hsl(var(--warning))" }}>
+            User profile not found
+          </p>
+          <p style={{ color: "hsl(var(--muted-foreground))" }}>
+            Your profile is being created...
+          </p>
+          <p
+            className="text-xs mt-2"
+            style={{ color: "hsl(var(--muted-foreground))" }}
+          >
             Please wait or refresh the page
           </p>
         </div>
@@ -225,14 +262,27 @@ export default function SettingsPage() {
   const settings = userSettings || null;
 
   return (
-    <div className="min-h-screen bg-neutral-900">
+    <div
+      className="min-h-screen"
+      style={{ backgroundColor: "hsl(var(--background))" }}
+    >
       {/* Top Navigation Bar */}
-      <div className="border-b border-neutral-700 bg-neutral-800 px-6 py-4">
+      <div
+        className="border-b px-6 py-4"
+        style={{
+          borderColor: "hsl(var(--border))",
+          backgroundColor: "hsl(var(--card))",
+        }}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-6">
             <button
               onClick={handleBackToDashboard}
-              className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+              className="flex items-center gap-2 transition-colors hover:underline"
+              style={{
+                color: "hsl(var(--muted-foreground))",
+                textDecorationColor: "hsl(var(--orange-500))",
+              }}
             >
               <ArrowLeft className="w-4 h-4" />
               Back to Dashboard
@@ -248,9 +298,19 @@ export default function SettingsPage() {
                     onClick={() => handleTabClick(tab.id)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                       activeTab === tab.id
-                        ? "bg-orange-500 text-white"
-                        : "text-neutral-400 hover:text-white hover:bg-neutral-700"
+                        ? "text-white"
+                        : "hover:text-white hover:bg-opacity-20"
                     }`}
+                    style={{
+                      backgroundColor:
+                        activeTab === tab.id
+                          ? "hsl(var(--primary))"
+                          : "transparent",
+                      color:
+                        activeTab === tab.id
+                          ? "hsl(var(--primary-foreground))"
+                          : "hsl(var(--muted-foreground))",
+                    }}
                   >
                     <Icon className="w-4 h-4" />
                     {tab.label}
@@ -261,18 +321,27 @@ export default function SettingsPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button className="text-neutral-400 hover:text-white transition-colors">
+            <button
+              className="transition-colors"
+              style={{ color: "hsl(var(--muted-foreground))" }}
+            >
               <Sun className="w-5 h-5" />
             </button>
             {isSignedIn ? (
               <SignOutButton>
-                <button className="text-neutral-400 hover:text-white transition-colors">
+                <button
+                  className="transition-colors"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   Sign out
                 </button>
               </SignOutButton>
             ) : (
               <SignInButton>
-                <button className="text-neutral-400 hover:text-white transition-colors">
+                <button
+                  className="transition-colors"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   Sign in
                 </button>
               </SignInButton>
@@ -286,7 +355,12 @@ export default function SettingsPage() {
         {/* Left Section - User Profile and Usage */}
         <div className="w-80 space-y-6">
           {/* User Profile Card */}
-          <Card className="bg-neutral-800 border-neutral-700">
+          <Card
+            style={{
+              backgroundColor: "hsl(var(--card))",
+              borderColor: "hsl(var(--border))",
+            }}
+          >
             <CardContent className="p-6 text-center">
               {userData.avatar && userData.avatar.startsWith("http") ? (
                 <img
@@ -295,27 +369,47 @@ export default function SettingsPage() {
                   className="w-20 h-20 rounded-full mx-auto mb-4 object-cover"
                 />
               ) : (
-                <div className="w-20 h-20 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-2xl font-bold text-white">
+                <div
+                  className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"
+                  style={{ backgroundColor: "hsl(var(--primary))" }}
+                >
+                  <span
+                    className="text-2xl font-bold"
+                    style={{ color: "hsl(var(--primary-foreground))" }}
+                  >
                     {userData.avatar}
                   </span>
                 </div>
               )}
-              <h2 className="text-xl font-semibold text-white mb-1">
+              <h2
+                className="text-xl font-semibold mb-1"
+                style={{ color: "hsl(var(--foreground))" }}
+              >
                 {userData.name}
               </h2>
-              <p className="text-neutral-400 mb-3">{userData.email}</p>
+              <p
+                className="mb-3"
+                style={{ color: "hsl(var(--muted-foreground))" }}
+              >
+                {userData.email}
+              </p>
 
               {/* Bio */}
               {userData.bio && (
-                <p className="text-sm text-neutral-300 mb-3 italic">
+                <p
+                  className="text-sm mb-3 italic"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   "{userData.bio}"
                 </p>
               )}
 
               {/* Location */}
               {userData.location && (
-                <div className="flex items-center justify-center gap-2 text-sm text-neutral-400 mb-3">
+                <div
+                  className="flex items-center justify-center gap-2 text-sm mb-3"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   <MapPin className="w-4 h-4" />
                   {userData.location}
                 </div>
@@ -323,7 +417,10 @@ export default function SettingsPage() {
 
               {/* GitHub Username */}
               {userData.githubUsername && (
-                <div className="flex items-center justify-center gap-2 text-sm text-neutral-400 mb-3">
+                <div
+                  className="flex items-center justify-center gap-2 text-sm mb-3"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   <Github className="w-4 h-4" />@{userData.githubUsername}
                 </div>
               )}
@@ -331,31 +428,63 @@ export default function SettingsPage() {
               {/* Followers/Following */}
               <div className="flex items-center justify-center gap-4 text-sm mb-3">
                 <div className="flex items-center gap-1">
-                  <Users className="w-4 h-4 text-neutral-400" />
-                  <span className="text-white font-medium">
+                  <Users
+                    className="w-4 h-4"
+                    style={{ color: "hsl(var(--muted-foreground))" }}
+                  />
+                  <span
+                    className="font-medium"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
                     {userData.followers}
                   </span>
-                  <span className="text-neutral-400">followers</span>
+                  <span style={{ color: "hsl(var(--muted-foreground))" }}>
+                    followers
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-white font-medium">
+                  <span
+                    className="font-medium"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
                     {userData.following}
                   </span>
-                  <span className="text-neutral-400">following</span>
+                  <span style={{ color: "hsl(var(--muted-foreground))" }}>
+                    following
+                  </span>
                 </div>
               </div>
 
-              <Badge className="bg-purple-500/20 text-purple-400 border-purple-500">
+              <Badge
+                style={{
+                  backgroundColor: "hsl(var(--primary))",
+                  color: "hsl(var(--primary-foreground))",
+                  borderColor: "hsl(var(--primary))",
+                }}
+              >
                 {userData.plan}
               </Badge>
             </CardContent>
           </Card>
 
           {/* Kite Usage Card */}
-          <Card className="bg-neutral-800 border-neutral-700">
+          <Card
+            style={{
+              backgroundColor: "hsl(var(--card))",
+              borderColor: "hsl(var(--border))",
+            }}
+          >
             <CardHeader>
-              <CardTitle className="text-white text-lg">Kite Usage</CardTitle>
-              <p className="text-sm text-neutral-400">
+              <CardTitle
+                className="text-lg"
+                style={{ color: "hsl(var(--foreground))" }}
+              >
+                Kite Usage
+              </CardTitle>
+              <p
+                className="text-sm"
+                style={{ color: "hsl(var(--muted-foreground))" }}
+              >
                 Resets {userData.lastReset}
               </p>
             </CardHeader>
@@ -363,20 +492,29 @@ export default function SettingsPage() {
               {/* Standard Usage */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-300">Standard</span>
-                  <span className="text-white">
+                  <span style={{ color: "hsl(var(--muted-foreground))" }}>
+                    Standard
+                  </span>
+                  <span style={{ color: "hsl(var(--foreground))" }}>
                     {userData.standardUsage.used}/{userData.standardUsage.total}
                   </span>
                 </div>
-                <div className="w-full bg-neutral-700 rounded-full h-2 mb-1">
+                <div
+                  className="w-full rounded-full h-2 mb-1"
+                  style={{ backgroundColor: "hsl(var(--muted))" }}
+                >
                   <div
-                    className="bg-orange-500 h-2 rounded-full transition-all duration-300"
+                    className="h-2 rounded-full transition-all duration-300"
                     style={{
                       width: `${(userData.standardUsage.used / userData.standardUsage.total) * 100}%`,
+                      backgroundColor: "hsl(var(--primary))",
                     }}
                   />
                 </div>
-                <p className="text-xs text-neutral-400">
+                <p
+                  className="text-xs"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   {userData.standardUsage.remaining} messages remaining
                 </p>
               </div>
@@ -384,29 +522,47 @@ export default function SettingsPage() {
               {/* Premium Usage */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-300">Premium</span>
-                  <span className="text-white">
+                  <span style={{ color: "hsl(var(--muted-foreground))" }}>
+                    Premium
+                  </span>
+                  <span style={{ color: "hsl(var(--foreground))" }}>
                     {userData.premiumUsage.used}/{userData.premiumUsage.total}
                   </span>
                 </div>
-                <div className="w-full bg-neutral-700 rounded-full h-2 mb-1">
+                <div
+                  className="w-full rounded-full h-2 mb-1"
+                  style={{ backgroundColor: "hsl(var(--muted))" }}
+                >
                   <div
-                    className="bg-orange-500 h-2 rounded-full transition-all duration-300"
+                    className="h-2 rounded-full transition-all duration-300"
                     style={{
                       width: `${(userData.premiumUsage.used / userData.premiumUsage.total) * 100}%`,
+                      backgroundColor: "hsl(var(--primary))",
                     }}
                   />
                 </div>
-                <p className="text-xs text-neutral-400">
+                <p
+                  className="text-xs"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   {userData.premiumUsage.remaining} messages remaining
                 </p>
               </div>
 
-              <Button className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+              <Button
+                className="w-full"
+                style={{
+                  backgroundColor: "hsl(var(--primary))",
+                  color: "hsl(var(--primary-foreground))",
+                }}
+              >
                 Buy more premium credits →
               </Button>
 
-              <p className="text-xs text-neutral-400 text-center">
+              <p
+                className="text-xs text-center"
+                style={{ color: "hsl(var(--muted-foreground))" }}
+              >
                 Each tool call (e.g. search grounding) used in a reply consumes
                 an additional standard credit. Models may not always utilize
                 enabled tools.
@@ -421,7 +577,10 @@ export default function SettingsPage() {
             <>
               {/* Plan Benefits */}
               <div>
-                <h1 className="text-2xl font-bold text-white mb-6">
+                <h1
+                  className="text-2xl font-bold mb-6"
+                  style={{ color: "hsl(var(--foreground))" }}
+                >
                   {userData.plan} Benefits
                 </h1>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -430,31 +589,39 @@ export default function SettingsPage() {
                     return (
                       <Card
                         key={index}
-                        className={`bg-neutral-800 border-neutral-700 ${
-                          !benefit.available ? "opacity-60" : ""
-                        }`}
+                        style={{
+                          backgroundColor: "hsl(var(--card))",
+                          borderColor: "hsl(var(--border))",
+                          opacity: !benefit.available ? 0.6 : 1,
+                        }}
                       >
                         <CardContent className="p-6 text-center">
                           <div
-                            className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                              benefit.available
-                                ? "bg-orange-500/20"
-                                : "bg-neutral-600/20"
-                            }`}
+                            className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4"
+                            style={{
+                              backgroundColor: benefit.available
+                                ? "hsl(var(--primary) / 0.2)"
+                                : "hsl(var(--muted) / 0.2)",
+                            }}
                           >
                             <Icon
-                              className={`w-6 h-6 ${
-                                benefit.available
-                                  ? "text-orange-500"
-                                  : "text-neutral-400"
-                              }`}
+                              className="w-6 h-6"
+                              style={{
+                                color: benefit.available
+                                  ? "hsl(var(--primary))"
+                                  : "hsl(var(--muted-foreground))",
+                              }}
                             />
                           </div>
-                          <h3 className="text-lg font-semibold text-white mb-2">
+                          <h3
+                            className="text-lg font-semibold mb-2"
+                            style={{ color: "hsl(var(--foreground))" }}
+                          >
                             {benefit.title}
                           </h3>
                           <p
-                            className="text-neutral-400 text-sm leading-relaxed"
+                            className="text-sm leading-relaxed"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
                             dangerouslySetInnerHTML={{
                               __html: benefit.description,
                             }}
@@ -467,15 +634,30 @@ export default function SettingsPage() {
 
                 <div className="text-center mb-6">
                   {userData.planType === "free" ? (
-                    <Button className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 text-lg">
+                    <Button
+                      className="px-8 py-3 text-lg"
+                      style={{
+                        backgroundColor: "hsl(var(--primary))",
+                        color: "hsl(var(--primary-foreground))",
+                      }}
+                    >
                       Upgrade to Pro
                     </Button>
                   ) : (
-                    <Button className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-3 text-lg">
+                    <Button
+                      className="px-8 py-3 text-lg"
+                      style={{
+                        backgroundColor: "hsl(var(--primary))",
+                        color: "hsl(var(--primary-foreground))",
+                      }}
+                    >
                       Manage Subscription
                     </Button>
                   )}
-                  <p className="text-sm text-neutral-400 mt-3">
+                  <p
+                    className="text-sm mt-3"
+                    style={{ color: "hsl(var(--muted-foreground))" }}
+                  >
                     * Premium credits are used for GPT Image Gen, o3, Claude
                     Sonnet, Gemini 2.5 Pro, GPT 5 (Reasoning), and Grok 3/4.
                     Additional Premium credits can be purchased separately for
@@ -485,19 +667,30 @@ export default function SettingsPage() {
               </div>
 
               {/* Billing Preferences */}
-              <Card className="bg-neutral-800 border-neutral-700">
+              <Card
+                style={{
+                  backgroundColor: "hsl(var(--card))",
+                  borderColor: "hsl(var(--border))",
+                }}
+              >
                 <CardHeader>
-                  <CardTitle className="text-white">
+                  <CardTitle style={{ color: "hsl(var(--foreground))" }}>
                     Billing Preferences
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-white font-medium">
+                      <p
+                        className="font-medium"
+                        style={{ color: "hsl(var(--foreground))" }}
+                      >
                         Email me receipts
                       </p>
-                      <p className="text-sm text-neutral-400">
+                      <p
+                        className="text-sm"
+                        style={{ color: "hsl(var(--muted-foreground))" }}
+                      >
                         Send receipts to your account email when a payment
                         succeeds.
                       </p>
@@ -511,9 +704,13 @@ export default function SettingsPage() {
                       />
                       <label
                         htmlFor="email-receipts"
-                        className="block w-12 h-6 bg-neutral-600 rounded-full cursor-pointer"
+                        className="block w-12 h-6 rounded-full cursor-pointer"
+                        style={{ backgroundColor: "hsl(var(--muted))" }}
                       >
-                        <span className="block w-5 h-5 bg-white rounded-full transform transition-transform translate-x-0.5 translate-y-0.5"></span>
+                        <span
+                          className="block w-5 h-5 rounded-full transform transition-transform translate-x-0.5 translate-y-0.5"
+                          style={{ backgroundColor: "hsl(var(--foreground))" }}
+                        ></span>
                       </label>
                     </div>
                   </div>
@@ -521,19 +718,39 @@ export default function SettingsPage() {
               </Card>
 
               {/* Danger Zone */}
-              <Card className="bg-neutral-800 border-red-500/20">
+              <Card
+                style={{
+                  backgroundColor: "hsl(var(--card))",
+                  borderColor: "hsl(var(--destructive) / 0.2)",
+                }}
+              >
                 <CardHeader>
-                  <CardTitle className="text-red-400">Danger Zone</CardTitle>
+                  <CardTitle style={{ color: "hsl(var(--destructive))" }}>
+                    Danger Zone
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-white font-medium">Delete Account</p>
-                      <p className="text-sm text-neutral-400">
+                      <p
+                        className="font-medium"
+                        style={{ color: "hsl(var(--foreground))" }}
+                      >
+                        Delete Account
+                      </p>
+                      <p
+                        className="text-sm"
+                        style={{ color: "hsl(var(--muted-foreground))" }}
+                      >
                         Permanently delete your account and all associated data.
                       </p>
                     </div>
-                    <Button className="bg-red-600 hover:bg-red-700 text-white">
+                    <Button
+                      style={{
+                        backgroundColor: "hsl(var(--destructive))",
+                        color: "hsl(var(--destructive-foreground))",
+                      }}
+                    >
                       Delete Account
                     </Button>
                   </div>
@@ -547,19 +764,37 @@ export default function SettingsPage() {
             <>
               {/* Available Models */}
               <div>
-                <h1 className="text-2xl font-bold text-white mb-6">
+                <h1
+                  className="text-2xl font-bold mb-6"
+                  style={{ color: "hsl(var(--foreground))" }}
+                >
                   Available Models
                 </h1>
-                <p className="text-neutral-400 mb-6">
+                <p
+                  className="mb-6"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   Choose from our selection of AI models. Standard models use
                   standard credits, while premium models use premium credits.
                 </p>
                 {/* Open Source Models */}
                 <div className="mb-8">
-                  <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-                    <DollarSignIcon className="w-5 h-5 text-green-500" />
+                  <h2
+                    className="text-xl font-semibold mb-4 flex items-center gap-2"
+                    style={{ color: "hsl(var(--foreground))" }}
+                  >
+                    <DollarSignIcon
+                      className="w-5 h-5"
+                      style={{ color: "hsl(var(--green))" }}
+                    />
                     Open Source Models
-                    <Badge className="bg-white-500/20 text-green-400 border-green-500">
+                    <Badge
+                      style={{
+                        backgroundColor: "hsl(var(--green-500) / 0.2)",
+                        color: "hsl(var(--green-500))",
+                        borderColor: "hsl(var(--green-500))",
+                      }}
+                    >
                       Uses Free Credits
                     </Badge>
                   </h2>
@@ -581,18 +816,33 @@ export default function SettingsPage() {
                     ].map((model, index) => (
                       <Card
                         key={index}
-                        className="bg-neutral-800 border-neutral-700"
+                        style={{
+                          backgroundColor: "hsl(var(--card))",
+                          borderColor: "hsl(var(--border))",
+                        }}
                       >
                         <CardContent className="p-6">
                           <div className="flex items-start justify-between mb-3">
-                            <h3 className="text-lg font-semibold text-white">
+                            <h3
+                              className="text-lg font-semibold"
+                              style={{ color: "hsl(var(--foreground))" }}
+                            >
                               {model.name}
                             </h3>
-                            <Badge className={model.statusColor}>
+                            <Badge
+                              style={{
+                                backgroundColor: "hsl(var(--green-500) / 0.2)",
+                                color: "hsl(var(--green-500))",
+                                borderColor: "hsl(var(--green-500))",
+                              }}
+                            >
                               {model.status}
                             </Badge>
                           </div>
-                          <p className="text-neutral-400 text-sm mb-4">
+                          <p
+                            className="text-sm mb-4"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
                             {model.description}
                           </p>
                           <div className="space-y-2">
@@ -601,8 +851,17 @@ export default function SettingsPage() {
                                 key={capIndex}
                                 className="flex items-center gap-2 text-xs"
                               >
-                                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                                <span className="text-neutral-300">
+                                <div
+                                  className="w-2 h-2 rounded-full"
+                                  style={{
+                                    backgroundColor: "hsl(var(--primary))",
+                                  }}
+                                ></div>
+                                <span
+                                  style={{
+                                    color: "hsl(var(--muted-foreground))",
+                                  }}
+                                >
                                   {capability}
                                 </span>
                               </div>
@@ -616,173 +875,317 @@ export default function SettingsPage() {
 
                 {/* Standard Models */}
                 <div className="mb-8">
-                  <h2 className="text-xl font-semibold text-neutral-500 mb-4 flex items-center gap-2">
-                    <Zap className="w-5 h-5 text-neutral-500" />
+                  <h2
+                    className="text-xl font-semibold mb-4 flex items-center gap-2"
+                    style={{ color: "hsl(var(--muted-foreground))" }}
+                  >
+                    <Zap
+                      className="w-5 h-5"
+                      style={{ color: "hsl(var(--muted-foreground))" }}
+                    />
                     Standard Models
-                    <Badge className="bg-neutral-500/20 text-neutral-400 border-neutral-500">
+                    <Badge
+                      style={{
+                        backgroundColor: "hsl(var(--muted) / 0.2)",
+                        color: "hsl(var(--muted-foreground))",
+                        borderColor: "hsl(var(--muted))",
+                      }}
+                    >
                       Uses Standard Credits
                     </Badge>
                   </h2>
-                  <p className="text-neutral-500 text-center py-8 text-lg">
+                  <p
+                    className="text-center py-8 text-lg"
+                    style={{ color: "hsl(var(--muted-foreground))" }}
+                  >
                     Coming Soon
                   </p>
                 </div>
 
                 {/* Premium Models */}
                 <div className="mb-8">
-                  <h2 className="text-xl font-semibold text-neutral-500 mb-4 flex items-center gap-2">
-                    <Rocket className="w-5 h-5 text-neutral-500" />
+                  <h2
+                    className="text-xl font-semibold mb-4 flex items-center gap-2"
+                    style={{ color: "hsl(var(--muted-foreground))" }}
+                  >
+                    <Rocket
+                      className="w-5 h-5"
+                      style={{ color: "hsl(var(--muted-foreground))" }}
+                    />
                     Premium Models
-                    <Badge className="bg-neutral-500/20 text-neutral-400 border-neutral-500">
+                    <Badge
+                      style={{
+                        backgroundColor: "hsl(var(--muted) / 0.2)",
+                        color: "hsl(var(--muted-foreground))",
+                        borderColor: "hsl(var(--muted))",
+                      }}
+                    >
                       Uses Premium Credits
                     </Badge>
                   </h2>
-                  <p className="text-neutral-500 text-center py-8 text-lg">
+                  <p
+                    className="text-center py-8 text-lg"
+                    style={{ color: "hsl(var(--muted-foreground))" }}
+                  >
                     Coming Soon
                   </p>
                 </div>
 
                 {/* Model Usage Statistics */}
-                <Card className="bg-neutral-800 border-neutral-700">
-                  <CardHeader>
-                    <CardTitle className="text-white">
-                      Model Usage Statistics
-                    </CardTitle>
-                    <p className="text-sm text-neutral-400">
-                      Track your usage across different model types
-                    </p>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="text-center p-4 bg-neutral-700/50 rounded-lg">
-                        <div className="text-2xl font-bold text-orange-500 mb-1">
-                          {userData.standardUsage.used}
-                        </div>
-                        <div className="text-sm text-neutral-400">
-                          Standard Credits Used
-                        </div>
-                      </div>
-                      <div className="text-center p-4 bg-neutral-700/50 rounded-lg">
-                        <div className="text-2xl font-bold text-purple-500 mb-1">
-                          {userData.premiumUsage.used}
-                        </div>
-                        <div className="text-sm text-neutral-400">
-                          Premium Credits Used
-                        </div>
-                      </div>
-                      <div className="text-center p-4 bg-neutral-700/50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-500 mb-1">
-                          {userData.standardUsage.used +
-                            userData.premiumUsage.used}
-                        </div>
-                        <div className="text-sm text-neutral-400">
-                          Total Credits Used
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Model Preferences */}
-                <Card className="bg-neutral-800 border-neutral-700">
-                  <CardHeader>
-                    <CardTitle className="text-white">
-                      Model Preferences
-                    </CardTitle>
-                    <p className="text-sm text-neutral-400">
-                      Customize your default model selections
-                    </p>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-white font-medium">
-                          Default Standard Model
-                        </p>
-                        <p className="text-sm text-neutral-400">
-                          Choose your preferred standard model for general tasks
-                        </p>
-                      </div>
-                      <select className="bg-neutral-700 border border-neutral-600 text-white px-3 py-2 rounded-lg">
-                        <option value="gpt-4o">GPT-4o</option>
-                        <option value="claude-3.5-sonnet">
-                          Claude 3.5 Sonnet
-                        </option>
-                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-white font-medium">
-                          Default Premium Model
-                        </p>
-                        <p className="text-sm text-neutral-400">
-                          Choose your preferred premium model for advanced tasks
-                        </p>
-                      </div>
-                      <select className="bg-neutral-700 border border-neutral-600 text-white px-3 py-2 rounded-lg">
-                        <option value="gpt-5-reasoning">
-                          GPT-5 (Reasoning)
-                        </option>
-                        <option value="claude-3.5-sonnet-premium">
-                          Claude 3.5 Sonnet (Premium)
-                        </option>
-                        <option value="grok-3">Grok 3</option>
-                      </select>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-white font-medium">
-                          Auto-switch to Premium
-                        </p>
-                        <p className="text-sm text-neutral-400">
-                          Automatically use premium models for complex reasoning
-                          tasks
-                        </p>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          id="auto-premium"
-                          defaultChecked={false}
-                        />
-                        <label
-                          htmlFor="auto-premium"
-                          className="block w-12 h-6 bg-neutral-600 rounded-full cursor-pointer"
+                <div className="space-y-8">
+                  <Card
+                    style={{
+                      backgroundColor: "hsl(var(--card))",
+                      borderColor: "hsl(var(--border))",
+                    }}
+                  >
+                    <CardHeader>
+                      <CardTitle style={{ color: "hsl(var(--foreground))" }}>
+                        Model Usage Statistics
+                      </CardTitle>
+                      <p
+                        className="text-sm"
+                        style={{ color: "hsl(var(--muted-foreground))" }}
+                      >
+                        Track your usage across different model types
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div
+                          className="text-center p-4 rounded-lg"
+                          style={{ backgroundColor: "hsl(var(--muted) / 0.5)" }}
                         >
-                          <span className="block w-5 h-5 bg-white rounded-full transform transition-transform translate-x-0.5 translate-y-0.5"></span>
-                        </label>
+                          <div
+                            className="text-2xl font-bold mb-1"
+                            style={{ color: "hsl(var(--orange-500))" }}
+                          >
+                            {userData.standardUsage.used}
+                          </div>
+                          <div
+                            className="text-sm"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Standard Credits Used
+                          </div>
+                        </div>
+                        <div
+                          className="text-center p-4 rounded-lg"
+                          style={{ backgroundColor: "hsl(var(--muted) / 0.5)" }}
+                        >
+                          <div
+                            className="text-2xl font-bold mb-1"
+                            style={{ color: "hsl(var(--purple-500))" }}
+                          >
+                            {userData.premiumUsage.used}
+                          </div>
+                          <div
+                            className="text-sm"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Premium Credits Used
+                          </div>
+                        </div>
+                        <div
+                          className="text-center p-4 rounded-lg"
+                          style={{ backgroundColor: "hsl(var(--muted) / 0.5)" }}
+                        >
+                          <div
+                            className="text-2xl font-bold mb-1"
+                            style={{ color: "hsl(var(--blue-500))" }}
+                          >
+                            {userData.standardUsage.used +
+                              userData.premiumUsage.used}
+                          </div>
+                          <div
+                            className="text-sm"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Total Credits Used
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+
+                  {/* Model Preferences */}
+                  <Card
+                    style={{
+                      backgroundColor: "hsl(var(--card))",
+                      borderColor: "hsl(var(--border))",
+                    }}
+                  >
+                    <CardHeader>
+                      <CardTitle style={{ color: "hsl(var(--foreground))" }}>
+                        Model Preferences
+                      </CardTitle>
+                      <p
+                        className="text-sm"
+                        style={{ color: "hsl(var(--muted-foreground))" }}
+                      >
+                        Customize your default model selections
+                      </p>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p
+                            className="font-medium"
+                            style={{ color: "hsl(var(--foreground))" }}
+                          >
+                            Default Standard Model
+                          </p>
+                          <p
+                            className="text-sm"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Choose your preferred standard model for general
+                            tasks
+                          </p>
+                        </div>
+                        <select
+                          className="px-3 py-2 rounded-lg"
+                          style={{
+                            backgroundColor: "hsl(var(--muted))",
+                            borderColor: "hsl(var(--border))",
+                            color: "hsl(var(--foreground))",
+                          }}
+                        >
+                          <option value="gpt-4o">GPT-4o</option>
+                          <option value="claude-3.5-sonnet">
+                            Claude 3.5 Sonnet
+                          </option>
+                          <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p
+                            className="font-medium"
+                            style={{ color: "hsl(var(--foreground))" }}
+                          >
+                            Default Premium Model
+                          </p>
+                          <p
+                            className="text-sm"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Choose your preferred premium model for advanced
+                            tasks
+                          </p>
+                        </div>
+                        <select
+                          className="px-3 py-2 rounded-lg"
+                          style={{
+                            backgroundColor: "hsl(var(--muted))",
+                            borderColor: "hsl(var(--border))",
+                            color: "hsl(var(--foreground))",
+                          }}
+                        >
+                          <option value="gpt-5-reasoning">
+                            GPT-5 (Reasoning)
+                          </option>
+                          <option value="claude-3.5-sonnet-premium">
+                            Claude 3.5 Sonnet (Premium)
+                          </option>
+                          <option value="grok-3">Grok 3</option>
+                        </select>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p
+                            className="font-medium"
+                            style={{ color: "hsl(var(--foreground))" }}
+                          >
+                            Auto-switch to Premium
+                          </p>
+                          <p
+                            className="text-sm"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Automatically use premium models for complex
+                            reasoning tasks
+                          </p>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            id="auto-premium"
+                            defaultChecked={false}
+                          />
+                          <label
+                            htmlFor="auto-premium"
+                            className="block w-12 h-6 rounded-full cursor-pointer"
+                            style={{ backgroundColor: "hsl(var(--muted))" }}
+                          >
+                            <span
+                              className="block w-5 h-5 rounded-full transform transition-transform translate-x-0.5 translate-y-0.5"
+                              style={{
+                                backgroundColor: "hsl(var(--foreground))",
+                              }}
+                            ></span>
+                          </label>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
             </>
           )}
 
           {activeTab === "customization" && (
             <>
-              <Card className="bg-neutral-800 border-neutral-700">
+              <Card
+                style={{
+                  backgroundColor: "hsl(var(--card))",
+                  borderColor: "hsl(var(--border))",
+                }}
+              >
                 <CardHeader>
-                  <CardTitle className="text-white">Appearance</CardTitle>
-                  <p className="text-sm text-neutral-400">
+                  <CardTitle style={{ color: "hsl(var(--foreground))" }}>
+                    Appearance
+                  </CardTitle>
+                  <p
+                    className="text-sm"
+                    style={{ color: "hsl(var(--muted-foreground))" }}
+                  >
                     Choose how Kite looks and feels
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <p className="text-white font-medium mb-2">Theme</p>
+                    <p
+                      className="font-medium mb-2"
+                      style={{ color: "hsl(var(--foreground))" }}
+                    >
+                      Theme
+                    </p>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => setTheme("light")}
                         className={`px-4 py-2 rounded-lg border transition-colors ${
                           theme === "light"
-                            ? "bg-orange-500 text-white border-orange-500"
-                            : "text-neutral-300 border-neutral-600 hover:bg-neutral-700"
+                            ? "text-white border-orange-500"
+                            : "hover:bg-opacity-20"
                         }`}
+                        style={{
+                          backgroundColor:
+                            theme === "light"
+                              ? "hsl(var(--primary))"
+                              : "transparent",
+                          color:
+                            theme === "light"
+                              ? "hsl(var(--primary-foreground))"
+                              : "hsl(var(--muted-foreground))",
+                          borderColor:
+                            theme === "light"
+                              ? "hsl(var(--primary))"
+                              : "hsl(var(--border))",
+                        }}
                       >
                         Light
                       </button>
@@ -790,9 +1193,23 @@ export default function SettingsPage() {
                         onClick={() => setTheme("dark")}
                         className={`px-4 py-2 rounded-lg border transition-colors ${
                           theme === "dark"
-                            ? "bg-orange-500 text-white border-orange-500"
-                            : "text-neutral-300 border-neutral-600 hover:bg-neutral-700"
+                            ? "text-white border-orange-500"
+                            : "hover:bg-opacity-20"
                         }`}
+                        style={{
+                          backgroundColor:
+                            theme === "dark"
+                              ? "hsl(var(--primary))"
+                              : "transparent",
+                          color:
+                            theme === "dark"
+                              ? "hsl(var(--primary-foreground))"
+                              : "hsl(var(--muted-foreground))",
+                          borderColor:
+                            theme === "dark"
+                              ? "hsl(var(--primary))"
+                              : "hsl(var(--border))",
+                        }}
                       >
                         Dark
                       </button>
@@ -800,14 +1217,31 @@ export default function SettingsPage() {
                         onClick={() => setTheme("auto")}
                         className={`px-4 py-2 rounded-lg border transition-colors ${
                           theme === "auto"
-                            ? "bg-orange-500 text-white border-orange-500"
-                            : "text-neutral-300 border-neutral-600 hover:bg-neutral-700"
+                            ? "text-white border-orange-500"
+                            : "hover:bg-opacity-20"
                         }`}
+                        style={{
+                          backgroundColor:
+                            theme === "auto"
+                              ? "hsl(var(--primary))"
+                              : "transparent",
+                          color:
+                            theme === "auto"
+                              ? "hsl(var(--primary-foreground))"
+                              : "hsl(var(--muted-foreground))",
+                          borderColor:
+                            theme === "auto"
+                              ? "hsl(var(--primary))"
+                              : "hsl(var(--border))",
+                        }}
                       >
                         Auto
                       </button>
                     </div>
-                    <p className="text-xs text-neutral-400 mt-2">
+                    <p
+                      className="text-xs mt-2"
+                      style={{ color: "hsl(var(--muted-foreground))" }}
+                    >
                       Auto follows your system preference
                     </p>
                   </div>
@@ -820,7 +1254,10 @@ export default function SettingsPage() {
             activeTab !== "models" &&
             activeTab !== "customization" && (
               <div className="text-center py-12">
-                <p className="text-neutral-400 text-lg">
+                <p
+                  className="text-lg"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
                   {tabs.find((tab) => tab.id === activeTab)?.label} settings
                   coming soon...
                 </p>
