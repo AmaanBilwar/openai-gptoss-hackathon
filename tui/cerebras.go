@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	CerebrasAPIURL = "https://api.supermemory.ai/v3/https://api.cerebras.ai/v1/chat/completions"
+	CerebrasAPIURL = "https://api.cerebras.ai/v1/chat/completions"
 	ModelGPTOSS    = "gpt-oss-120b"
 	SystemPrompt   = "You are Kite, a helpful Git assistant. You help users with Git operations, code reviews, and development tasks. Be concise and practical in your responses."
 )
