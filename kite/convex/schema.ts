@@ -73,16 +73,16 @@ export default defineSchema({
   }).index("by_repo_branch", ["repoId", "name"])
     .index("by_repo", ["repoId"]),
 
-  webhooks: defineTable({
-    repoId: v.number(),
-    webhookId: v.optional(v.number()), // GitHub webhook id if created
-    events: v.array(v.string()),
-    secretHash: v.optional(v.string()), // HMAC key hash/fingerprint
-    active: v.boolean(),
-    lastDeliveryId: v.optional(v.string()),
-    createdAt: now(),
-    updatedAt: now(),
-  }).index("by_repo", ["repoId"]),
+  // webhooks: defineTable({
+  //   repoId: v.number(),
+  //   webhookId: v.optional(v.number()), // GitHub webhook id if created
+  //   events: v.array(v.string()),
+  //   secretHash: v.optional(v.string()), // HMAC key hash/fingerprint
+  //   active: v.boolean(),
+  //   lastDeliveryId: v.optional(v.string()),
+  //   createdAt: now(),
+  //   updatedAt: now(),
+  // }).index("by_repo", ["repoId"]),
 
   commits: defineTable({
     repoId: v.number(),
@@ -131,55 +131,55 @@ export default defineSchema({
   }).index("by_repo_commit", ["repoId", "sha"])
     .index("by_repo_path", ["repoId", "path"]),
 
-  hunks: defineTable({
-    // smallest RAG unit (an @@ ... @@ section)
-    repoId: v.number(),
-    sha: v.string(),      // commit sha (or PR aggregate sha if you materialize)
-    path: v.string(),
-    hunkIndex: v.number(), // 0..N within that file diff
-    header: v.string(),    // @@ -a,b +c,d @@ …
-    // line ranges (optional but handy for citation)
-    oldStart: v.optional(v.number()),
-    oldLines: v.optional(v.number()),
-    newStart: v.optional(v.number()),
-    newLines: v.optional(v.number()),
-    // raw hunk text (small; consider truncation policy)
-    hunk: v.string(),
-    // LLM-generated mini summary for retrieval
-    summary: v.optional(v.string()),
-    // lightweight labels/tags (e.g., "fix", "refactor")
-    labels: v.optional(v.array(v.string())),
-    createdAt: now(),
-  }).index("by_repo_commit_path", ["repoId", "sha", "path"])
-    .index("by_repo_path", ["repoId", "path"]),
+  // hunks: defineTable({
+  //   // smallest RAG unit (an @@ ... @@ section)
+  //   repoId: v.number(),
+  //   sha: v.string(),      // commit sha (or PR aggregate sha if you materialize)
+  //   path: v.string(),
+  //   hunkIndex: v.number(), // 0..N within that file diff
+  //   header: v.string(),    // @@ -a,b +c,d @@ …
+  //   // line ranges (optional but handy for citation)
+  //   oldStart: v.optional(v.number()),
+  //   oldLines: v.optional(v.number()),
+  //   newStart: v.optional(v.number()),
+  //   newLines: v.optional(v.number()),
+  //   // raw hunk text (small; consider truncation policy)
+  //   hunk: v.string(),
+  //   // LLM-generated mini summary for retrieval
+  //   summary: v.optional(v.string()),
+  //   // lightweight labels/tags (e.g., "fix", "refactor")
+  //   labels: v.optional(v.array(v.string())),
+  //   createdAt: now(),
+  // }).index("by_repo_commit_path", ["repoId", "sha", "path"])
+  //   .index("by_repo_path", ["repoId", "path"]),
     
   // Optional: generic embeddings table to support commit/PR RAG
   // You can shard by "scope" to keep queries fast.
-  embeddings: defineTable({
-    repoId: v.number(),
-    scope: v.union(
-      v.literal("commit_hunk"),
-      v.literal("pr_file"), 
-      v.literal("pr_comment"),
-      v.literal("commit_msg"),
-      v.literal("user_query")  // NEW: Add this scope
-    ),
-    // For user queries, these fields would be:
-    sha: v.optional(v.string()),          // null for queries
-    prNumber: v.optional(v.number()),     // null for queries  
-    path: v.optional(v.string()),         // null for queries
-    hunkId: v.optional(v.id("hunks")),   // null for queries
-    // NEW: Add query-specific fields
-    queryText: v.optional(v.string()),    // the original query
-    userId: v.optional(v.string()),       // who made the query
-    queryId: v.optional(v.string()),      // unique query identifier
-    // vector & text preview
-    embedding: v.array(v.number()),
-    dim: v.number(),
-    text: v.optional(v.string()),
-    createdAt: now(),
-  }).index("by_repo_scope", ["repoId", "scope"])
-    .index("by_repo_pr", ["repoId", "prNumber"]),
+  // embeddings: defineTable({
+  //   repoId: v.number(),
+  //   scope: v.union(
+  //     v.literal("commit_hunk"),
+  //     v.literal("pr_file"), 
+  //     v.literal("pr_comment"),
+  //     v.literal("commit_msg"),
+  //     v.literal("user_query")  // NEW: Add this scope
+  //   ),
+  //   // For user queries, these fields would be:
+  //   sha: v.optional(v.string()),          // null for queries
+  //   prNumber: v.optional(v.number()),     // null for queries  
+  //   path: v.optional(v.string()),         // null for queries
+  //   hunkId: v.optional(v.id("hunks")),   // null for queries
+  //   // NEW: Add query-specific fields
+  //   queryText: v.optional(v.string()),    // the original query
+  //   userId: v.optional(v.string()),       // who made the query
+  //   queryId: v.optional(v.string()),      // unique query identifier
+  //   // vector & text preview
+  //   embedding: v.array(v.number()),
+  //   dim: v.number(),
+  //   text: v.optional(v.string()),
+  //   createdAt: now(),
+  // }).index("by_repo_scope", ["repoId", "scope"])
+  //   .index("by_repo_pr", ["repoId", "prNumber"]),
   // If Convex vector indexes are enabled in your project:
   // .vectorIndex("by_embedding", { vectorField: "embedding", dimensions: 768, filterFields: ["repoId","scope","prNumber"] })
 
@@ -255,21 +255,21 @@ export default defineSchema({
     createdAt: now(),
   }).index("by_repo_pr", ["repoId", "number"]),
 
-  pr_comments: defineTable({
-    repoId: v.number(),
-    number: v.number(),
-    commentId: v.number(),
-    authorLogin: v.string(),
-    body: v.string(),
-    path: v.optional(v.string()),
-    // positions relative to diff, if provided
-    diffHunk: v.optional(v.string()),
-    line: v.optional(v.number()),
-    side: v.optional(v.string()), // "LEFT"/"RIGHT"
-    createdAtIso: v.optional(v.string()),
-    createdAt: now(),
-  }).index("by_repo_pr", ["repoId", "number"])
-    .index("by_repo_pr_path", ["repoId", "number", "path"]),
+  // pr_comments: defineTable({
+  //   repoId: v.number(),
+  //   number: v.number(),
+  //   commentId: v.number(),
+  //   authorLogin: v.string(),
+  //   body: v.string(),
+  //   path: v.optional(v.string()),
+  //   // positions relative to diff, if provided
+  //   diffHunk: v.optional(v.string()),
+  //   line: v.optional(v.number()),
+  //   side: v.optional(v.string()), // "LEFT"/"RIGHT"
+  //   createdAtIso: v.optional(v.string()),
+  //   createdAt: now(),
+  // }).index("by_repo_pr", ["repoId", "number"])
+  //   .index("by_repo_pr_path", ["repoId", "number", "path"]),
 
   summaries: defineTable({
     // cached LLM rollups for speed
@@ -304,18 +304,18 @@ export default defineSchema({
   }).index("by_repo_base", ["repoId", "baseSha"]),
 
   // Placeholer for Ani's merge conflicts feature
-  conflicts: defineTable({
-    // merge conflict resolver artifacts
-    repoId: v.number(),
-    prNumber: v.number(),
-    path: v.string(),
-    ours: v.string(),    // extracted code block
-    theirs: v.string(),
-    context: v.optional(v.string()),
-    resolutionPatch: v.optional(v.string()),
-    postedCommentId: v.optional(v.number()),
-    createdAt: now(),
-  }).index("by_repo_pr_path", ["repoId", "prNumber", "path"]),
+  // conflicts: defineTable({
+  //   // merge conflict resolver artifacts
+  //   repoId: v.number(),
+  //   prNumber: v.number(),
+  //   path: v.string(),
+  //   ours: v.string(),    // extracted code block
+  //   theirs: v.string(),
+  //   context: v.optional(v.string()),
+  //   resolutionPatch: v.optional(v.string()),
+  //   postedCommentId: v.optional(v.number()),
+  //   createdAt: now(),
+  // }).index("by_repo_pr_path", ["repoId", "prNumber", "path"]),
 
   // Audit Log(for dashboard, to be integrated later)
   audit_log: defineTable({
@@ -337,104 +337,104 @@ export default defineSchema({
   }).index("by_tool", ["tool"]),
 
   // Webhook tracking and processing status
-  webhook_events: defineTable({
-    // track incoming webhook events
-    repoId: v.number(),
-    eventType: v.union(
-      v.literal("push"),
-      v.literal("pull_request"),
-      v.literal("pull_request_review"),
-      v.literal("issue_comment")
-    ),
-    eventId: v.string(), // GitHub event ID
-    deliveryId: v.string(), // GitHub delivery ID
-    payload: v.object({}), // full webhook payload
-    processed: v.boolean(), // whether we've processed this event
-    processingStatus: v.union(
-      v.literal("pending"),
-      v.literal("processing"),
-      v.literal("completed"),
-      v.literal("failed")
-    ),
-    error: v.optional(v.string()),
-    createdAt: now(),
-    processedAt: v.optional(v.number()),
-  }).index("by_repo_event", ["repoId", "eventType"])
-    .index("by_processed", ["processed"])
-    .index("by_status", ["processingStatus"]),
+  // webhook_events: defineTable({
+  //   // track incoming webhook events
+  //   repoId: v.number(),
+  //   eventType: v.union(
+  //     v.literal("push"),
+  //     v.literal("pull_request"),
+  //     v.literal("pull_request_review"),
+  //     v.literal("issue_comment")
+  //   ),
+  //   eventId: v.string(), // GitHub event ID
+  //   deliveryId: v.string(), // GitHub delivery ID
+  //   payload: v.object({}), // full webhook payload
+  //   processed: v.boolean(), // whether we've processed this event
+  //   processingStatus: v.union(
+  //     v.literal("pending"),
+  //     v.literal("processing"),
+  //     v.literal("completed"),
+  //     v.literal("failed")
+  //   ),
+  //   error: v.optional(v.string()),
+  //   createdAt: now(),
+  //   processedAt: v.optional(v.number()),
+  // }).index("by_repo_event", ["repoId", "eventType"])
+  //   .index("by_processed", ["processed"])
+  //   .index("by_status", ["processingStatus"]),
 
   // Processing queue for commits and PRs
-  processing_queue: defineTable({
-    // queue for embedding processing
-    repoId: v.number(),
-    targetType: v.union(
-      v.literal("commit"),
-      v.literal("pull_request")
-    ),
-    targetId: v.string(), // commit SHA or PR number
-    priority: v.number(), // 1=high, 2=normal, 3=low
-    status: v.union(
-      v.literal("queued"),
-      v.literal("processing"),
-      v.literal("completed"),
-      v.literal("failed"),
-      v.literal("retry")
-    ),
-    attempts: v.number(), // number of processing attempts
-    maxAttempts: v.number(), // maximum retry attempts
-    error: v.optional(v.string()),
-    metadata: v.optional(v.object({})), // additional context
-    createdAt: now(),
-    startedAt: v.optional(v.number()),
-    completedAt: v.optional(v.number()),
-    nextRetryAt: v.optional(v.number()),
-  }).index("by_status_priority", ["status", "priority"])
-    .index("by_repo_target", ["repoId", "targetType", "targetId"])
-    .index("by_retry", ["nextRetryAt"]),
+  // processing_queue: defineTable({
+  //   // queue for embedding processing
+  //   repoId: v.number(),
+  //   targetType: v.union(
+  //     v.literal("commit"),
+  //     v.literal("pull_request")
+  //   ),
+  //   targetId: v.string(), // commit SHA or PR number
+  //   priority: v.number(), // 1=high, 2=normal, 3=low
+  //   status: v.union(
+  //     v.literal("queued"),
+  //     v.literal("processing"),
+  //     v.literal("completed"),
+  //     v.literal("failed"),
+  //     v.literal("retry")
+  //   ),
+  //   attempts: v.number(), // number of processing attempts
+  //   maxAttempts: v.number(), // maximum retry attempts
+  //   error: v.optional(v.string()),
+  //   metadata: v.optional(v.object({})), // additional context
+  //   createdAt: now(),
+  //   startedAt: v.optional(v.number()),
+  //   completedAt: v.optional(v.number()),
+  //   nextRetryAt: v.optional(v.number()),
+  // }).index("by_status_priority", ["status", "priority"])
+  //   .index("by_repo_target", ["repoId", "targetType", "targetId"])
+  //   .index("by_retry", ["nextRetryAt"]),
 
   // Processing status for commits
-  commit_processing: defineTable({
-    // track embedding processing for commits
-    repoId: v.number(),
-    sha: v.string(),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("fetching"),
-      v.literal("parsing"),
-      v.literal("embedding"),
-      v.literal("completed"),
-      v.literal("failed")
-    ),
-    hunkCount: v.optional(v.number()),
-    embeddingCount: v.optional(v.number()),
-    error: v.optional(v.string()),
-    processingTimeMs: v.optional(v.number()),
-    createdAt: now(),
-    updatedAt: now(),
-  }).index("by_repo_sha", ["repoId", "sha"])
-    .index("by_status", ["status"]),
+  // commit_processing: defineTable({
+  //   // track embedding processing for commits
+  //   repoId: v.number(),
+  //   sha: v.string(),
+  //   status: v.union(
+  //     v.literal("pending"),
+  //     v.literal("fetching"),
+  //     v.literal("parsing"),
+  //     v.literal("embedding"),
+  //     v.literal("completed"),
+  //     v.literal("failed")
+  //   ),
+  //   hunkCount: v.optional(v.number()),
+  //   embeddingCount: v.optional(v.number()),
+  //   error: v.optional(v.string()),
+  //   processingTimeMs: v.optional(v.number()),
+  //   createdAt: now(),
+  //   updatedAt: now(),
+  // }).index("by_repo_sha", ["repoId", "sha"])
+  //   .index("by_status", ["status"]),
 
   // Processing status for PRs
-  pr_processing: defineTable({
-    // track embedding processing for PRs
-    repoId: v.number(),
-    number: v.number(),
-    status: v.union(
-      v.literal("pending"),
-      v.literal("fetching"),
-      v.literal("parsing"),
-      v.literal("embedding"),
-      v.literal("completed"),
-      v.literal("failed")
-    ),
-    commitCount: v.optional(v.number()),
-    hunkCount: v.optional(v.number()),
-    embeddingCount: v.optional(v.number()),
-    error: v.optional(v.string()),
-    processingTimeMs: v.optional(v.number()),
-    createdAt: now(),
-    updatedAt: now(),
-  }).index("by_repo_number", ["repoId", "number"])
-    .index("by_status", ["status"]),
+  // pr_processing: defineTable({
+  //   // track embedding processing for PRs
+  //   repoId: v.number(),
+  //   number: v.number(),
+  //   status: v.union(
+  //     v.literal("pending"),
+  //     v.literal("fetching"),
+  //     v.literal("parsing"),
+  //     v.literal("embedding"),
+  //     v.literal("completed"),
+  //     v.literal("failed")
+  //   ),
+  //   commitCount: v.optional(v.number()),
+  //   hunkCount: v.optional(v.number()),
+  //   embeddingCount: v.optional(v.number()),
+  //   error: v.optional(v.string()),
+  //   processingTimeMs: v.optional(v.number()),
+  //   createdAt: now(),
+  //   updatedAt: now(),
+  // }).index("by_repo_number", ["repoId", "number"])
+  //   .index("by_status", ["status"]),
 
 });
