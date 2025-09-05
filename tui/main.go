@@ -370,11 +370,11 @@ func initialModel() model {
 	ta.Placeholder = "Send a message..."
 	ta.Focus()
 
-	ta.Prompt = ">> "
+	ta.Prompt = "┃ "
 	ta.CharLimit = 280
 
 	ta.SetWidth(30)
-	ta.SetHeight(1)
+	ta.SetHeight(3)
 
 	// Remove cursor line styling
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
@@ -386,8 +386,8 @@ func initialModel() model {
 
 *Ready to help you with your Git workflow!*`
 	renderedWelcome := renderMarkdown(welcomeMessage)
-	vp.SetContent(renderedWelcome)
-	vp.Style = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
+	// Width-wrap initial content for better layout
+	vp.SetContent(lipgloss.NewStyle().Width(vp.Width).Render(renderedWelcome))
 
 	ta.KeyMap.InsertNewline.SetEnabled(false)
 
@@ -457,20 +457,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.Width = msg.Width
 		m.textarea.SetWidth(msg.Width)
 		m.help.Width = msg.Width
-		// Calculate viewport height with proper spacing
-		textareaHeight := m.textarea.Height()
-		gapHeight := lipgloss.Height(gap)
-		m.viewport.Height = msg.Height - textareaHeight - gapHeight - 4 // Extra margin for help text
+		// Match example behavior: viewport height from window minus textarea and gap
+		m.viewport.Height = msg.Height - m.textarea.Height() - lipgloss.Height(gap)
 
 		if len(m.messages) > 0 {
-			// Join messages and render markdown for the entire content
-			content := strings.Join(m.messages, "\n")
-			// Apply width constraint to prevent overflow and ensure clean rendering
-			styledContent := lipgloss.NewStyle().
-				Width(m.viewport.Width - 4).
-				Height(m.viewport.Height).
-				Render(content)
-			m.viewport.SetContent(styledContent)
+			// Refresh viewport without forcing width/height to avoid clipping
+			m.refreshViewport()
 		}
 		m.viewport.GotoBottom()
 	case tea.KeyMsg:
@@ -526,11 +518,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Show help
 				renderedHelp := renderMarkdown(helpText)
 				m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedHelp)
-				styledContent := lipgloss.NewStyle().
-					Width(m.viewport.Width - 4).
-					Height(m.viewport.Height).
-					Render(strings.Join(m.messages, "\n"))
-				m.viewport.SetContent(styledContent)
+				m.refreshViewport()
 				m.textarea.Reset()
 				m.viewport.GotoBottom()
 				return m, nil
@@ -566,11 +554,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					historyMessage := "**Chat history not available** - Backend client not initialized."
 					m.messages = append(m.messages, textStyle.Render("Kite: ")+historyMessage)
 				}
-				styledContent := lipgloss.NewStyle().
-					Width(m.viewport.Width - 4).
-					Height(m.viewport.Height).
-					Render(strings.Join(m.messages, "\n"))
-				m.viewport.SetContent(styledContent)
+				m.refreshViewport()
 				m.textarea.Reset()
 				m.viewport.GotoBottom()
 				return m, nil
@@ -631,11 +615,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Render markdown for the bot response
 		renderedResponse := renderMarkdown(msg.response)
 		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedResponse)
-		styledContent := lipgloss.NewStyle().
-			Width(m.viewport.Width - 4).
-			Height(m.viewport.Height).
-			Render(strings.Join(m.messages, "\n"))
-		m.viewport.SetContent(styledContent)
+		m.refreshViewport()
 		m.textarea.Reset()
 		m.viewport.GotoBottom()
 		return m, nil
@@ -648,11 +628,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.messages) > 0 {
 			renderedResponse := renderMarkdownWithWidth(m.currentResponse, m.viewport.Width)
 			m.messages[len(m.messages)-1] = textStyle.Render("Kite: ") + renderedResponse
-			styledContent := lipgloss.NewStyle().
-				Width(m.viewport.Width - 4).
-				Height(m.viewport.Height).
-				Render(strings.Join(m.messages, "\n"))
-			m.viewport.SetContent(styledContent)
+			m.refreshViewport()
 			m.viewport.GotoBottom()
 		}
 
@@ -693,11 +669,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.messages) > 0 {
 			renderedResponse := renderMarkdownWithWidth(msg.response, m.viewport.Width)
 			m.messages[len(m.messages)-1] = textStyle.Render("Kite: ") + renderedResponse
-			styledContent := lipgloss.NewStyle().
-				Width(m.viewport.Width - 4).
-				Height(m.viewport.Height).
-				Render(strings.Join(m.messages, "\n"))
-			m.viewport.SetContent(styledContent)
+			m.refreshViewport()
 			m.viewport.GotoBottom()
 		}
 
@@ -721,11 +693,7 @@ I'll open your browser to complete the authentication process.
 > This will allow you to access all Kite features including GitHub integration.`
 		renderedAuth := renderMarkdown(authMessage)
 		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedAuth)
-		styledContent := lipgloss.NewStyle().
-			Width(m.viewport.Width - 4).
-			Height(m.viewport.Height).
-			Render(strings.Join(m.messages, "\n"))
-		m.viewport.SetContent(styledContent)
+		m.refreshViewport()
 		m.viewport.GotoBottom()
 
 		// Start authentication flow
@@ -746,11 +714,7 @@ You can now continue using Kite with all features including:
 *Ready to help you with your Git workflow!*`
 		renderedSuccess := renderMarkdown(successMessage)
 		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedSuccess)
-		styledContent := lipgloss.NewStyle().
-			Width(m.viewport.Width - 4).
-			Height(m.viewport.Height).
-			Render(strings.Join(m.messages, "\n"))
-		m.viewport.SetContent(styledContent)
+		m.refreshViewport()
 		m.textarea.Reset()
 		m.viewport.GotoBottom()
 		return m, nil
@@ -764,11 +728,7 @@ You can now continue using Kite with all features including:
 		// Render error message as markdown (in case it contains formatting)
 		renderedError := renderMarkdown("Error: " + msg.error)
 		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedError)
-		styledContent := lipgloss.NewStyle().
-			Width(m.viewport.Width - 4).
-			Height(m.viewport.Height).
-			Render(strings.Join(m.messages, "\n"))
-		m.viewport.SetContent(styledContent)
+		m.refreshViewport()
 		m.textarea.Reset()
 		m.viewport.GotoBottom()
 		return m, nil
@@ -867,6 +827,14 @@ func (m *model) stopSpinner() {
 	m.spinnerMsg = ""
 }
 
+// refreshViewport joins all messages and sets the viewport content without
+// enforcing additional width/height constraints that can cause clipping or
+// broken wrapping with multi-line and ANSI-rendered markdown content.
+func (m *model) refreshViewport() {
+	wrapped := lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.messages, "\n"))
+	m.viewport.SetContent(wrapped)
+}
+
 func (m *model) checkAuthOnStartup() tea.Cmd {
 	return func() tea.Msg {
 		// Check authentication status on startup
@@ -928,18 +896,13 @@ func (m model) View() string {
 	// Add muted help text at the bottom
 	mutedHelp := helpStyle.Render("Type /help for detailed help • Ctrl+L to clear chat • Esc to quit")
 
-	// Ensure proper spacing and prevent overlapping
-	return lipgloss.NewStyle().
-		Margin(0, 1).
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Render(fmt.Sprintf(
-			"%s%s%s\n%s",
-			content,
-			gap,
-			m.textarea.View(),
-			mutedHelp,
-		))
+	return fmt.Sprintf(
+		"%s%s%s\n%s",
+		content,
+		gap,
+		m.textarea.View(),
+		mutedHelp,
+	)
 }
 
 // Custom message types
