@@ -719,9 +719,71 @@ func GetTools() []ToolDefinition {
 
 // ExecuteTool calls the TypeScript backend to execute a tool
 func (bc *BackendClient) ExecuteTool(toolName string, parameters map[string]interface{}) (*ToolResult, error) {
+	// For intelligent_commit_split, use streaming endpoint
+	if toolName == "intelligent_commit_split" {
+		return bc.executeIntelligentCommitSplitWithStreaming(parameters)
+	}
+
 	// Create the tool call request
 	toolCall := ToolCall{
 		Tool:       toolName,
+		Parameters: parameters,
+	}
+
+	// Marshal the request
+	requestBody, err := json.Marshal(toolCall)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tool call: %w", err)
+	}
+
+	// Create HTTP request
+	url := fmt.Sprintf("%s/api/tools/execute", bc.baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Make the request
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute tool: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tool execution failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result ToolResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// executeIntelligentCommitSplitWithStreaming executes intelligent commit split with real-time progress updates
+func (bc *BackendClient) executeIntelligentCommitSplitWithStreaming(parameters map[string]interface{}) (*ToolResult, error) {
+	// For now, fall back to regular execution since we need to implement proper streaming
+	// This is a placeholder for the streaming implementation
+	return bc.executeIntelligentCommitSplitRegular(parameters)
+}
+
+// executeIntelligentCommitSplitRegular executes intelligent commit split with regular HTTP call
+func (bc *BackendClient) executeIntelligentCommitSplitRegular(parameters map[string]interface{}) (*ToolResult, error) {
+	// Create the tool call request
+	toolCall := ToolCall{
+		Tool:       "intelligent_commit_split",
 		Parameters: parameters,
 	}
 

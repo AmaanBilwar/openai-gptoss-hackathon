@@ -773,6 +773,14 @@ PULL REQUEST WORKFLOW:
 					return
 				}
 
+				// For intelligent_commit_split, send progress messages in real-time
+				if toolCall.Function.Name == "intelligent_commit_split" && len(result.ProgressMessages) > 0 {
+					// Send each progress message individually
+					for _, progressMsg := range result.ProgressMessages {
+						responseChan <- progressMsg + "\n"
+					}
+				}
+
 				// Format and send the tool result
 				resultMessage := formatToolResult(toolCall.Function.Name, result)
 				responseChan <- resultMessage + "\n"
