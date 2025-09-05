@@ -10,6 +10,7 @@ import {
   getActivityCategoryColor,
   type Activity,
 } from "@/hooks/useActivities";
+import { CommitActivityChart } from "@/components/CommitActivityChart";
 
 export default function ActivityPage() {
   const activities = useActivities(10); // Get last 10 activities
@@ -19,47 +20,10 @@ export default function ActivityPage() {
     <div className="p-6 space-y-6">
       {/* Main Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Mission Activity Chart */}
-        <Card
-          className="lg:col-span-8"
-          style={{
-            backgroundColor: "hsl(var(--card))",
-            borderColor: "hsl(var(--border))",
-          }}
-        >
-          <CardHeader className="pb-3">
-            <CardTitle
-              className="text-sm font-medium tracking-wider"
-              style={{ color: "hsl(var(--card-foreground))" }}
-            >
-              ACTIVITY OVERVIEW
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-48 relative">
-              {/* Chart Grid */}
-              <div className="absolute inset-0 grid grid-cols-8 grid-rows-6 opacity-20">
-                {Array.from({ length: 48 }).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{ borderColor: "hsl(var(--border))" }}
-                    className="border"
-                  ></div>
-                ))}
-              </div>
-              {/* Y-axis labels */}
-              <div
-                className="absolute left-0 top-0 h-full flex flex-col justify-between text-xs -ml-5 font-mono"
-                style={{ color: "hsl(var(--muted-foreground))" }}
-              ></div>
-              {/* X-axis labels */}
-              <div
-                className="absolute bottom-0 left-0 w-full flex justify-between text-xs -mb-6 font-mono"
-                style={{ color: "hsl(var(--muted-foreground))" }}
-              ></div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Commit Activity Chart */}
+        <div className="lg:col-span-8">
+          <CommitActivityChart />
+        </div>
 
         {/* Agent Status Overview */}
 
