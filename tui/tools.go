@@ -28,10 +28,11 @@ type ToolCall struct {
 
 // ToolResult represents the result of a tool execution
 type ToolResult struct {
-	Success    bool                   `json:"success"`
-	Error      string                 `json:"error,omitempty"`
-	Suggestion string                 `json:"suggestion,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	Success          bool                   `json:"success"`
+	Error            string                 `json:"error,omitempty"`
+	Suggestion       string                 `json:"suggestion,omitempty"`
+	Data             map[string]interface{} `json:"data,omitempty"`
+	ProgressMessages []string               `json:"progress_messages,omitempty"`
 }
 
 // BackendClient handles communication with the TypeScript backend
@@ -558,7 +559,7 @@ func GetTools() []ToolDefinition {
 							"description": "The branch to create and switch to before committing (optional, uses current branch if not specified)",
 						},
 						"files": map[string]interface{}{
-							"type":        "array",
+							"type": "array",
 							"items": map[string]interface{}{
 								"type": "string",
 							},
@@ -583,9 +584,9 @@ func GetTools() []ToolDefinition {
 				Name:        "push_to_remote",
 				Description: "Push the current branch to the remote repository. Use this when user asks to push code / commits to remote.",
 				Parameters: map[string]interface{}{
-					"type": "object",
+					"type":       "object",
 					"properties": map[string]interface{}{},
-					"required": []string{},
+					"required":   []string{},
 				},
 			},
 		},
@@ -718,6 +719,11 @@ func GetTools() []ToolDefinition {
 
 // ExecuteTool calls the TypeScript backend to execute a tool
 func (bc *BackendClient) ExecuteTool(toolName string, parameters map[string]interface{}) (*ToolResult, error) {
+	// For intelligent_commit_split, use streaming endpoint
+	if toolName == "intelligent_commit_split" {
+		return bc.executeIntelligentCommitSplitWithStreaming(parameters)
+	}
+
 	// Create the tool call request
 	toolCall := ToolCall{
 		Tool:       toolName,
@@ -766,18 +772,75 @@ func (bc *BackendClient) ExecuteTool(toolName string, parameters map[string]inte
 	return &result, nil
 }
 
+// executeIntelligentCommitSplitWithStreaming executes intelligent commit split with real-time progress updates
+func (bc *BackendClient) executeIntelligentCommitSplitWithStreaming(parameters map[string]interface{}) (*ToolResult, error) {
+	// For now, fall back to regular execution since we need to implement proper streaming
+	// This is a placeholder for the streaming implementation
+	return bc.executeIntelligentCommitSplitRegular(parameters)
+}
+
+// executeIntelligentCommitSplitRegular executes intelligent commit split with regular HTTP call
+func (bc *BackendClient) executeIntelligentCommitSplitRegular(parameters map[string]interface{}) (*ToolResult, error) {
+	// Create the tool call request
+	toolCall := ToolCall{
+		Tool:       "intelligent_commit_split",
+		Parameters: parameters,
+	}
+
+	// Marshal the request
+	requestBody, err := json.Marshal(toolCall)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tool call: %w", err)
+	}
+
+	// Create HTTP request
+	url := fmt.Sprintf("%s/api/tools/execute", bc.baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Make the request
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute tool: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("tool execution failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result ToolResult
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // IsGitAction checks if a tool call is a git-related action
 func IsGitAction(toolName string) bool {
 	gitTools := map[string]bool{
-		"checkout_branch":           true,
-		"create_branch":             true,
-		"intelligent_commit_split":  true,
-		"push_to_remote":            true,
-		"check_changes_threshold":   true,
-		"check_git_status":          true,
-		"check_branch_exists":       true,
-		"list_repository_commits":   true,
-		"resolve_merge_conflicts":   true,
+		"checkout_branch":          true,
+		"create_branch":            true,
+		"intelligent_commit_split": true,
+		"push_to_remote":           true,
+		"check_changes_threshold":  true,
+		"check_git_status":         true,
+		"check_branch_exists":      true,
+		"list_repository_commits":  true,
+		"resolve_merge_conflicts":  true,
 	}
 	return gitTools[toolName]
 }

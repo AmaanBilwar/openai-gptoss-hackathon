@@ -1625,7 +1625,16 @@ Instructions:
         };
       }
       
-      const splitter = new IntelligentCommitSplitter(cerebrasApiKey);
+      // Create progress callback to send messages to Go TUI
+      const progressMessages: string[] = [];
+      const progressCallback = (message: string, type?: 'info' | 'success' | 'warning' | 'error') => {
+        // Store progress messages for return
+        progressMessages.push(message);
+        // Also log to console for debugging
+        console.log(`[${type?.toUpperCase() || 'INFO'}] ${message}`);
+      };
+
+      const splitter = new IntelligentCommitSplitter(cerebrasApiKey, progressCallback);
       
       if (dryRun) {
         const commitGroups = await splitter.runIntelligentSplitting(false);
@@ -1639,6 +1648,7 @@ Instructions:
             commit_message: group.commit_message,
             files: group.files.map(f => f.file_path)
           })),
+          progress_messages: progressMessages,
           message: `Analysis complete! Found ${commitGroups.length} logical commit groups. No commits were created (dry run mode).`
         };
       } else {
@@ -1654,6 +1664,7 @@ Instructions:
             commit_message: group.commit_message,
             files: group.files.map(f => f.file_path)
           })),
+          progress_messages: progressMessages,
           message: `Successfully created ${commitGroups.length} logical commits${autoPush ? ' and pushed to remote' : ''}`
         };
       }

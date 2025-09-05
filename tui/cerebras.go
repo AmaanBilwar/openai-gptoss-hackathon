@@ -773,6 +773,14 @@ PULL REQUEST WORKFLOW:
 					return
 				}
 
+				// For intelligent_commit_split, send progress messages in real-time
+				if toolCall.Function.Name == "intelligent_commit_split" && len(result.ProgressMessages) > 0 {
+					// Send each progress message individually
+					for _, progressMsg := range result.ProgressMessages {
+						responseChan <- progressMsg + "\n"
+					}
+				}
+
 				// Format and send the tool result
 				resultMessage := formatToolResult(toolCall.Function.Name, result)
 				responseChan <- resultMessage + "\n"
@@ -818,6 +826,28 @@ PULL REQUEST WORKFLOW:
 func formatToolResult(toolName string, result *ToolResult) string {
 	if !result.Success {
 		return fmt.Sprintf("❌ %s failed: %s", toolName, result.Error)
+	}
+
+	// Handle progress messages for intelligent commit split
+	if toolName == "intelligent_commit_split" && len(result.ProgressMessages) > 0 {
+		// Format progress messages in a cleaner way
+		var formattedMessages []string
+		for _, msg := range result.ProgressMessages {
+			// Add proper formatting based on message content
+			if strings.Contains(msg, "Starting") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("**%s**", msg))
+			} else if strings.Contains(msg, "Found") && strings.Contains(msg, "files") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("• %s", msg))
+			} else if strings.Contains(msg, "Created") || strings.Contains(msg, "Completed") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("✓ %s", msg))
+			} else if strings.Contains(msg, "Creating commit") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("→ %s", msg))
+			} else {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("  %s", msg))
+			}
+		}
+		progressText := strings.Join(formattedMessages, "\n")
+		return fmt.Sprintf("**Intelligent Commit Splitting Results:**\n\n%s", progressText)
 	}
 
 	switch toolName {

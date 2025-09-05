@@ -9,6 +9,9 @@ import { pipeline, env } from '@xenova/transformers';
 
 const execAsync = promisify(exec);
 
+// Progress callback type for structured messaging to Go TUI
+export type ProgressCallback = (message: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
+
 // Initialize local embedding model
 let embeddingModel: any = null;
 const initializeEmbeddingModel = async () => {
@@ -50,8 +53,18 @@ const generateCodeEmbeddings = async (
  */
 export class IntelligentCommitSplitter {
   private cerebras: CerebrasLLM;
-  constructor(cerebrasApiKey: string) {
+  private onProgress?: ProgressCallback;
+
+  constructor(cerebrasApiKey: string, onProgress?: ProgressCallback) {
     this.cerebras = new CerebrasLLM(cerebrasApiKey);
+    this.onProgress = onProgress;
+  }
+
+  /**
+   * Set progress callback for structured messaging to Go TUI
+   */
+  setProgressCallback(callback: ProgressCallback): void {
+    this.onProgress = callback;
   }
 
   /**
@@ -608,6 +621,7 @@ export class IntelligentCommitSplitter {
   private async executeCommitSplitting(commitGroups: CommitGroup[], autoPush: boolean = false): Promise<boolean> {
     console.log('🎯 Executing hunk-based commit splitting...');
     console.log(`📊 Total commit groups to process: ${commitGroups.length}`);
+    this.onProgress?.(`Creating ${commitGroups.length} commits...`, 'info');
 
     // Store current branch name
     let currentBranch: string;
@@ -617,6 +631,7 @@ export class IntelligentCommitSplitter {
       // Current branch: ${currentBranch}
     } catch (error) {
       console.error(`❌ Error getting current branch: ${error}`);
+      this.onProgress?.(`Failed to get current branch: ${error}`, 'error');
       return false;
     }
 
@@ -626,8 +641,10 @@ export class IntelligentCommitSplitter {
       await execAsync(`git checkout -b ${backupBranch}`);
       await execAsync(`git checkout ${currentBranch}`);
       // Created backup branch: ${backupBranch}
+      this.onProgress?.(`Created backup branch: ${backupBranch}`, 'info');
     } catch (error) {
       console.error(`❌ Error creating backup branch: ${error}`);
+      this.onProgress?.(`Failed to create backup: ${error}`, 'error');
       return false;
     }
 
@@ -639,6 +656,9 @@ export class IntelligentCommitSplitter {
       console.log(`Feature: ${group.feature_name}`);
       console.log(`Title: ${group.commit_title}`);
       console.log(`Hunks: ${group.hunks.length} hunks across ${[...new Set(group.hunks.map(h => h.filePath))].length} files`);
+      
+      // User-friendly progress message
+      this.onProgress?.(`Creating commit ${i + 1}/${commitGroups.length}: ${group.commit_title}`, 'info');
 
       try {
         // Reset staging area
@@ -688,6 +708,7 @@ export class IntelligentCommitSplitter {
           const { stdout: stagedFilesAfterFallback } = await execAsync('git diff --cached --name-only');
           if (!stagedFilesAfterFallback.trim()) {
             console.log(`   ❌ Still no changes to commit after fallback for group ${group.feature_name}`);
+            this.onProgress?.(`Skipped: No changes to commit for ${group.feature_name}`, 'warning');
             continue;
           }
         }
@@ -698,31 +719,40 @@ export class IntelligentCommitSplitter {
 
         // Created commit: ${group.commit_title}
         successfulCommits++;
+        this.onProgress?.(`Created: ${group.commit_title}`, 'success');
 
       } catch (error) {
         console.error(`   ❌ Error creating commit for group ${group.feature_name}:`, error);
+        this.onProgress?.(`Failed: ${group.feature_name} - ${error}`, 'error');
         continue;
       }
     }
 
     console.log(`\n📊 Hunk-based commit splitting completed!`);
     console.log(`✅ Successfully created ${successfulCommits} commits out of ${commitGroups.length} groups`);
+    this.onProgress?.(`Completed! Created ${successfulCommits}/${commitGroups.length} commits`, 'success');
 
     // Push commits if requested
     if (autoPush && successfulCommits > 0) {
       console.log(`\n🚀 Pushing commits to remote...`);
+      this.onProgress?.(`Pushing to remote...`, 'info');
       try {
         await execAsync(`git push origin ${currentBranch}`);
         console.log(`✅ Successfully pushed ${successfulCommits} commits to ${currentBranch}`);
+        this.onProgress?.(`Pushed ${successfulCommits} commits to ${currentBranch}`, 'success');
       } catch (error) {
         console.error(`❌ Error pushing commits: ${error}`);
         console.log(`💡 You can manually push using: git push origin ${currentBranch}`);
+        this.onProgress?.(`Push failed: ${error}`, 'error');
+        this.onProgress?.(`Manual push: git push origin ${currentBranch}`, 'info');
         return false;
       }
     }
 
     console.log(`\n💾 Backup branch created: ${backupBranch}`);
     console.log(`💡 To revert all changes: git reset --hard ${backupBranch}`);
+    this.onProgress?.(`Backup: ${backupBranch}`, 'info');
+    this.onProgress?.(`To revert: git reset --hard ${backupBranch}`, 'info');
 
     return successfulCommits > 0;
   }
@@ -732,32 +762,40 @@ export class IntelligentCommitSplitter {
    */
   async runIntelligentSplitting(autoPush: boolean = false): Promise<CommitGroup[]> {
     console.log('🚀 Starting Intelligent Commit Splitting Analysis...');
+    this.onProgress?.('Starting intelligent commit analysis...', 'info');
 
     // Change to git root directory to ensure all git operations work correctly
     const gitRoot = await this.getGitRoot();
     if (gitRoot !== process.cwd()) {
       console.log(`📍 Changing to git root directory: ${gitRoot}`);
+      this.onProgress?.(`Working in: ${gitRoot}`, 'info');
       process.chdir(gitRoot);
     }
 
     // Step 1: Extract all file changes
     console.log('📊 Step 1: Extracting file changes...');
+    this.onProgress?.('Analyzing your changes...', 'info');
     const changes = await this.extractChanges();
     console.log(`Found ${changes.length} files with changes`);
+    this.onProgress?.(`Found ${changes.length} files with changes`, 'info');
 
     if (!changes.length) {
       console.log('No changes detected in git diff');
+      this.onProgress?.('No changes detected in your working directory', 'warning');
       return [];
     }
 
     // Step 2: Vectorize hunks using embeddings 
     console.log('📊 Step 2: Vectorizing hunks using embeddings...');
+    this.onProgress?.('Computing semantic embeddings...', 'info');
 
     try {
       // Step 3: Analyze semantic relationships
       console.log('🔍 Step 3: Analyzing semantic relationships...');
+      this.onProgress?.('Analyzing code relationships...', 'info');
       const [commitGroups, semanticSummary] = await this.analyzeSemanticRelationships(changes);
       console.log(`Identified ${commitGroups.length} logical commit groups`);
+      this.onProgress?.(`Identified ${commitGroups.length} logical commit groups`, 'success');
 
       if (semanticSummary) {
         // Semantic analysis summary generated
@@ -765,6 +803,7 @@ export class IntelligentCommitSplitter {
 
       // Step 4: Display results
       console.log('\n📋 Commit Groups Identified:');
+      this.onProgress?.('Commit Groups Identified:', 'info');
       for (let i = 0; i < commitGroups.length; i++) {
         const group = commitGroups[i];
         console.log(`\n${i + 1}. ${group.feature_name}`);
@@ -772,15 +811,21 @@ export class IntelligentCommitSplitter {
         console.log(`   Description: ${group.commit_message}`);
         console.log(`   Files: ${group.files.map(f => f.file_path)}`);
         console.log(`   Hunks: ${group.hunks.length} hunks across ${[...new Set(group.hunks.map(h => h.filePath))].length} files`);
+        
+        // User-friendly summary for Go TUI
+        this.onProgress?.(`${i + 1}. ${group.feature_name}`, 'info');
+        this.onProgress?.(`   Title: ${group.commit_title}`, 'info');
+        this.onProgress?.(`   Files: ${group.files.length} files, ${group.hunks.length} changes`, 'info');
       }
 
-        await this.executeCommitSplitting(commitGroups, autoPush);
+      this.onProgress?.('Executing commit splitting...', 'info');
+      await this.executeCommitSplitting(commitGroups, autoPush);
 
       return commitGroups;
 
     } catch (error) {
       console.error(`❌ Error during analysis: ${error}`);
-      // Analysis failed
+      this.onProgress?.(`Analysis failed: ${error}`, 'error');
       throw error;
     }
   }
@@ -790,6 +835,7 @@ export class IntelligentCommitSplitter {
    */
   private async clusterBySimilarity(hunkData: Array<{hunk: DiffHunk, embedding: number[], changeIndex: number}>): Promise<Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}>> {
     console.log(`🔗 Clustering ${hunkData.length} hunks using cosine similarity...`);
+    this.onProgress?.(`Clustering ${hunkData.length} code changes...`, 'info');
     
     const clusters: Array<{hunks: Array<{hunk: DiffHunk, changeIndex: number}>, avgSimilarity: number}> = [];
     const processed = new Set<number>();
@@ -825,6 +871,7 @@ export class IntelligentCommitSplitter {
     }
     
     // Found ${clusters.length} similarity clusters
+    this.onProgress?.(`Found ${clusters.length} logical groups`, 'success');
     return clusters;
   }
 
@@ -878,6 +925,7 @@ export class IntelligentCommitSplitter {
       
       try {
         console.log(`🤖 Generating commit message for cluster ${i + 1}...`);
+        this.onProgress?.(`Generating commit message ${i + 1}/${clusters.length}...`, 'info');
         const response = await this.cerebras.generateCommitMessage(groupFiles, `cluster_${i + 1}`, clusterContext);
         console.log(`📊 Full response structure:`, JSON.stringify(response, null, 2));
         let content = '';
