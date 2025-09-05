@@ -820,6 +820,13 @@ func formatToolResult(toolName string, result *ToolResult) string {
 		return fmt.Sprintf("❌ %s failed: %s", toolName, result.Error)
 	}
 
+	// Handle progress messages for intelligent commit split
+	if toolName == "intelligent_commit_split" && len(result.ProgressMessages) > 0 {
+		// Join all progress messages with newlines for better display
+		progressText := strings.Join(result.ProgressMessages, "\n")
+		return fmt.Sprintf("🚀 **Intelligent Commit Splitting Results:**\n\n%s", progressText)
+	}
+
 	switch toolName {
 	case "check_git_status":
 		return "📋 Git status checked successfully"
