@@ -871,6 +871,7 @@ export class IntelligentCommitSplitter {
     }
     
     // Found ${clusters.length} similarity clusters
+    this.onProgress?.(`✅ **Found ${clusters.length} logical groups**`, 'success');
     return clusters;
   }
 
