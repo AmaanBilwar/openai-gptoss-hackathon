@@ -830,9 +830,24 @@ func formatToolResult(toolName string, result *ToolResult) string {
 
 	// Handle progress messages for intelligent commit split
 	if toolName == "intelligent_commit_split" && len(result.ProgressMessages) > 0 {
-		// Join all progress messages with newlines for better display
-		progressText := strings.Join(result.ProgressMessages, "\n")
-		return fmt.Sprintf("🚀 **Intelligent Commit Splitting Results:**\n\n%s", progressText)
+		// Format progress messages in a cleaner way
+		var formattedMessages []string
+		for _, msg := range result.ProgressMessages {
+			// Add proper formatting based on message content
+			if strings.Contains(msg, "Starting") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("**%s**", msg))
+			} else if strings.Contains(msg, "Found") && strings.Contains(msg, "files") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("• %s", msg))
+			} else if strings.Contains(msg, "Created") || strings.Contains(msg, "Completed") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("✓ %s", msg))
+			} else if strings.Contains(msg, "Creating commit") {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("→ %s", msg))
+			} else {
+				formattedMessages = append(formattedMessages, fmt.Sprintf("  %s", msg))
+			}
+		}
+		progressText := strings.Join(formattedMessages, "\n")
+		return fmt.Sprintf("**Intelligent Commit Splitting Results:**\n\n%s", progressText)
 	}
 
 	switch toolName {
