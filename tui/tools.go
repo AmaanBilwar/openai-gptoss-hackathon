@@ -559,7 +559,7 @@ func GetTools() []ToolDefinition {
 							"description": "The branch to create and switch to before committing (optional, uses current branch if not specified)",
 						},
 						"files": map[string]interface{}{
-							"type":        "array",
+							"type": "array",
 							"items": map[string]interface{}{
 								"type": "string",
 							},
@@ -584,9 +584,9 @@ func GetTools() []ToolDefinition {
 				Name:        "push_to_remote",
 				Description: "Push the current branch to the remote repository. Use this when user asks to push code / commits to remote.",
 				Parameters: map[string]interface{}{
-					"type": "object",
+					"type":       "object",
 					"properties": map[string]interface{}{},
-					"required": []string{},
+					"required":   []string{},
 				},
 			},
 		},
@@ -770,15 +770,15 @@ func (bc *BackendClient) ExecuteTool(toolName string, parameters map[string]inte
 // IsGitAction checks if a tool call is a git-related action
 func IsGitAction(toolName string) bool {
 	gitTools := map[string]bool{
-		"checkout_branch":           true,
-		"create_branch":             true,
-		"intelligent_commit_split":  true,
-		"push_to_remote":            true,
-		"check_changes_threshold":   true,
-		"check_git_status":          true,
-		"check_branch_exists":       true,
-		"list_repository_commits":   true,
-		"resolve_merge_conflicts":   true,
+		"checkout_branch":          true,
+		"create_branch":            true,
+		"intelligent_commit_split": true,
+		"push_to_remote":           true,
+		"check_changes_threshold":  true,
+		"check_git_status":         true,
+		"check_branch_exists":      true,
+		"list_repository_commits":  true,
+		"resolve_merge_conflicts":  true,
 	}
 	return gitTools[toolName]
 }
