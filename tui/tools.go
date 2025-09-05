@@ -28,10 +28,11 @@ type ToolCall struct {
 
 // ToolResult represents the result of a tool execution
 type ToolResult struct {
-	Success    bool                   `json:"success"`
-	Error      string                 `json:"error,omitempty"`
-	Suggestion string                 `json:"suggestion,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	Success          bool                   `json:"success"`
+	Error            string                 `json:"error,omitempty"`
+	Suggestion       string                 `json:"suggestion,omitempty"`
+	Data             map[string]interface{} `json:"data,omitempty"`
+	ProgressMessages []string               `json:"progress_messages,omitempty"`
 }
 
 // BackendClient handles communication with the TypeScript backend
