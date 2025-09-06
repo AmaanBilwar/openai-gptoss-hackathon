@@ -25,7 +25,7 @@ export const config: EnvironmentConfig = {
 
 // Validate required environment variables
 export function validateConfig(): void {
-  const required = ['GITHUB_CLIENT_ID', 'CEREBRAS_API_KEY'];
+  const required = ['GITHUB_CLIENT_ID'];
   const missing = required.filter(key => !config[key as keyof EnvironmentConfig]);
   
   if (missing.length > 0) {
@@ -33,8 +33,13 @@ export function validateConfig(): void {
       `Missing required environment variables: ${missing.join(', ')}\n` +
       `Please create a .env file in the kite directory with these variables:\n` +
       `GITHUB_CLIENT_ID=your_github_client_id\n` +
-      `CEREBRAS_API_KEY=your_cerebras_api_key`
+      `CEREBRAS_API_KEY=your_cerebras_api_key (optional if using user API keys)`
     );
+  }
+  
+  // Warn if CEREBRAS_API_KEY is missing but don't fail
+  if (!config.CEREBRAS_API_KEY) {
+    console.warn('⚠️  CEREBRAS_API_KEY not set. Users will need to provide their own API keys through the Kite settings.');
   }
 }
 

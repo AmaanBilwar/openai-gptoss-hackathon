@@ -113,4 +113,17 @@ export default defineSchema({
     .index("by_tool_name", ["toolName"])
     .index("by_timestamp", ["timestamp"])
     .index("by_user_timestamp", ["userId", "timestamp"]),
+
+  apiKeys: defineTable({
+    userId: v.string(), // Clerk user ID
+    provider: v.string(), // e.g., "cerebras", "openai", "anthropic"
+    keyName: v.optional(v.string()), // User-friendly name for the key
+    encryptedKey: v.string(), // Encrypted API key
+    isActive: v.boolean(), // Whether the key is currently active
+    lastUsed: v.optional(v.number()), // Timestamp of last usage
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user_id", ["userId"])
+    .index("by_provider", ["provider"])
+    .index("by_user_provider", ["userId", "provider"]),
 });

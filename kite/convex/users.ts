@@ -1,6 +1,23 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 
+// Temporary mutation to clear all user data
+export const clearAllUsers = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Delete all user documents
+    const allUsers = await ctx.db.query("users").collect();
+    for (const user of allUsers) {
+      await ctx.db.delete(user._id);
+    }
+    
+    return { deleted: allUsers.length, message: "All users cleared" };
+  },
+});
+
 // Get current user profile
 export const getCurrentUser = query({
   args: {},
@@ -399,6 +416,16 @@ export const deleteUserAccount = mutation({
         await ctx.db.delete(repo._id);
       }
 
+      // Delete all user API keys
+      const apiKeys = await ctx.db
+        .query("apiKeys")
+        .withIndex("by_user_id", (q) => q.eq("userId", userId))
+        .collect();
+      
+      for (const apiKey of apiKeys) {
+        await ctx.db.delete(apiKey._id);
+      }
+
       // Delete user settings
       const settings = await ctx.db
         .query("settings")
@@ -424,5 +451,211 @@ export const deleteUserAccount = mutation({
       console.error("Error deleting user account:", error);
       throw new Error("Failed to delete user account");
     }
+  },
+});
+
+// Get user's API keys
+export const getUserApiKeys = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("apiKeys"),
+    userId: v.string(),
+    provider: v.string(),
+    keyName: v.optional(v.string()),
+    isActive: v.boolean(),
+    lastUsed: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const apiKeys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user_id", (q) => q.eq("userId", identity.subject))
+      .collect();
+
+    // Return API keys without the encrypted key for security
+    return apiKeys.map(key => ({
+      _id: key._id,
+      userId: key.userId,
+      provider: key.provider,
+      keyName: key.keyName,
+      isActive: key.isActive,
+      lastUsed: key.lastUsed,
+      createdAt: key.createdAt,
+      updatedAt: key.updatedAt,
+    }));
+  },
+});
+
+// Save or update an API key
+export const saveApiKey = mutation({
+  args: {
+    provider: v.string(),
+    keyName: v.optional(v.string()),
+    apiKey: v.string(),
+  },
+  returns: v.id("apiKeys"),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const userId = identity.subject;
+    const now = Date.now();
+
+    // For now, we'll store the key as-is. In production, you should encrypt it
+    // using a proper encryption library like crypto-js or similar
+    const encryptedKey = args.apiKey; // TODO: Implement proper encryption
+
+    // Check if an API key for this provider already exists
+    const existingKey = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user_provider", (q) => 
+        q.eq("userId", userId).eq("provider", args.provider)
+      )
+      .unique();
+
+    if (existingKey) {
+      // Update existing key
+      await ctx.db.patch(existingKey._id, {
+        keyName: args.keyName,
+        encryptedKey: encryptedKey,
+        isActive: true,
+        updatedAt: now,
+      });
+      return existingKey._id;
+    } else {
+      // Create new key
+      return await ctx.db.insert("apiKeys", {
+        userId: userId,
+        provider: args.provider,
+        keyName: args.keyName,
+        encryptedKey: encryptedKey,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  },
+});
+
+// Delete an API key
+export const deleteApiKey = mutation({
+  args: {
+    apiKeyId: v.id("apiKeys"),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const userId = identity.subject;
+
+    // Verify the API key belongs to the current user
+    const apiKey = await ctx.db.get(args.apiKeyId);
+    if (!apiKey || apiKey.userId !== userId) {
+      throw new Error("API key not found or access denied");
+    }
+
+    await ctx.db.delete(args.apiKeyId);
+    return true;
+  },
+});
+
+// Toggle API key active status
+export const toggleApiKeyStatus = mutation({
+  args: {
+    apiKeyId: v.id("apiKeys"),
+    isActive: v.boolean(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const userId = identity.subject;
+
+    // Verify the API key belongs to the current user
+    const apiKey = await ctx.db.get(args.apiKeyId);
+    if (!apiKey || apiKey.userId !== userId) {
+      throw new Error("API key not found or access denied");
+    }
+
+    await ctx.db.patch(args.apiKeyId, {
+      isActive: args.isActive,
+      updatedAt: Date.now(),
+    });
+    return true;
+  },
+});
+
+// Get user's API key by provider (for backend use)
+export const getUserApiKeyByProvider = query({
+  args: {
+    provider: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id("apiKeys"),
+      _creationTime: v.number(),
+      userId: v.string(),
+      provider: v.string(),
+      keyName: v.optional(v.string()),
+      encryptedKey: v.string(),
+      isActive: v.boolean(),
+      lastUsed: v.optional(v.number()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+    v.null()
+  ),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const userId = identity.subject;
+
+    const apiKey = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user_provider", (q) => 
+        q.eq("userId", userId).eq("provider", args.provider)
+      )
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .unique();
+
+    return apiKey;
+  },
+});
+
+// Get all active API keys for a user (for backend use)
+export const getActiveUserApiKeys = query({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("apiKeys"),
+    _creationTime: v.number(),
+    userId: v.string(),
+    provider: v.string(),
+    keyName: v.optional(v.string()),
+    encryptedKey: v.string(),
+    isActive: v.boolean(),
+    lastUsed: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    const userId = identity.subject;
+
+    const apiKeys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_user_id", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+
+    return apiKeys;
   },
 });

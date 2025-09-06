@@ -700,7 +700,15 @@ I'll open your browser to complete the authentication process.
 		return m, m.startAuthFlow()
 
 	case authCompleteMsg:
-		// Authentication completed, show success message
+		// Authentication completed, refresh API key from backend
+		fmt.Printf("🔄 Authentication completed, refreshing API key from backend...\n")
+		if m.cerebras != nil {
+			m.cerebras.RefreshApiKeyFromBackend()
+		} else {
+			fmt.Printf("❌ Cerebras client is nil, cannot refresh API key\n")
+		}
+
+		// Show success message
 		successMessage := `# ✅ Authentication Complete!
 
 **Authentication completed successfully!**
@@ -746,7 +754,7 @@ func (m *model) makeAPIRequest() tea.Cmd {
 	return func() tea.Msg {
 		// Check authentication first
 		if m.auth != nil {
-			authenticated, err := m.auth.CheckAuthStatus()
+			authenticated, _, err := m.auth.CheckAuthStatus()
 			if err != nil {
 				return apiErrorMsg{error: fmt.Sprintf("Failed to check authentication status: %v", err)}
 			}
@@ -839,7 +847,7 @@ func (m *model) checkAuthOnStartup() tea.Cmd {
 	return func() tea.Msg {
 		// Check authentication status on startup
 		if m.auth != nil {
-			authenticated, err := m.auth.CheckAuthStatus()
+			authenticated, _, err := m.auth.CheckAuthStatus()
 			if err != nil {
 				// Log error but don't show to user yet
 				log.Printf("Failed to check auth status on startup: %v", err)
@@ -849,6 +857,9 @@ func (m *model) checkAuthOnStartup() tea.Cmd {
 			if !authenticated {
 				// Return auth required message to trigger auth flow
 				return authRequiredMsg{}
+			} else {
+				// User is already authenticated, refresh API key
+				return authCompleteMsg{}
 			}
 		}
 		return nil

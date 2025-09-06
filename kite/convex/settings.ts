@@ -1,6 +1,23 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+// Temporary mutation to clear all settings data
+export const clearAllSettings = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    // Delete all settings documents
+    const allSettings = await ctx.db.query("settings").collect();
+    for (const setting of allSettings) {
+      await ctx.db.delete(setting._id);
+    }
+    
+    return { deleted: allSettings.length, message: "All settings cleared" };
+  },
+});
+
 // Get user settings
 export const getUserSettings = query({
   args: {},

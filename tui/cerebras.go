@@ -104,11 +104,12 @@ type ToolCallResponse struct {
 
 // CerebrasClient handles communication with the Cerebras API
 type CerebrasClient struct {
-	apiKey  string
-	client  *http.Client
-	backend *BackendClient
-	tools   []ToolDefinition
-	chatID  string // Current chat ID for persistence
+	apiKey    string
+	client    *http.Client
+	backend   *BackendClient
+	tools     []ToolDefinition
+	chatID    string // Current chat ID for persistence
+	authToken string // Clerk JWT token for backend authentication
 }
 
 // NewCerebrasClient creates a new Cerebras client
@@ -122,29 +123,113 @@ func NewCerebrasClient() (*CerebrasClient, error) {
 		}
 	}
 
-	apiKey := os.Getenv("CEREBRAS_API_KEY")
-	if apiKey == "" {
-		return nil, fmt.Errorf("CEREBRAS_API_KEY environment variable not set. Please set it in your .env.local file, .env file, or system environment")
-	}
-
-	// Initialize backend client
+	// Initialize backend client first
 	backend, err := NewBackendClient()
 	if err != nil {
-		fmt.Printf("Warning: Failed to initialize backend client: %v\n", err)
+		fmt.Printf("❌ Failed to initialize backend client: %v\n", err)
 		backend = nil
+	} else {
+		fmt.Printf("✅ Backend client initialized successfully\n")
+		// Test backend connectivity
+		resp, err := backend.client.Get(backend.baseURL + "/health")
+		if err != nil {
+			fmt.Printf("❌ Backend health check failed: %v\n", err)
+		} else {
+			resp.Body.Close()
+			fmt.Printf("✅ Backend is reachable at %s\n", backend.baseURL)
+		}
+	}
+
+	// Try to get API key from backend (user's API keys)
+	// Note: We'll defer this until after authentication in the main loop
+	var apiKey string
+
+	// Fallback to environment variable if no user API key found
+	if apiKey == "" {
+		apiKey = os.Getenv("CEREBRAS_API_KEY")
+		if apiKey == "" {
+			fmt.Printf("Info: No API key available yet, will fetch from backend after authentication\n")
+			apiKey = "placeholder" // Use placeholder to allow initialization
+		} else {
+			fmt.Printf("Using CEREBRAS_API_KEY from environment\n")
+		}
 	}
 
 	// Get available tools
 	tools := GetTools()
 
-	return &CerebrasClient{
+	client := &CerebrasClient{
 		apiKey: apiKey,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 		backend: backend,
 		tools:   tools,
-	}, nil
+	}
+
+	// Log what API key we're using
+	if apiKey == "placeholder" {
+		fmt.Printf("⚠️  Initialized with placeholder API key - will fetch real key after authentication\n")
+	} else {
+		fmt.Printf("✅ Initialized with API key (length: %d)\n", len(apiKey))
+	}
+
+	return client, nil
+}
+
+// RefreshApiKeyFromBackend tries to get the user's API key from the backend
+// This should be called after authentication
+func (c *CerebrasClient) RefreshApiKeyFromBackend() {
+	fmt.Printf("🔄 RefreshApiKeyFromBackend called\n")
+	if c.backend == nil {
+		fmt.Printf("❌ Backend client is nil, cannot refresh API key\n")
+		return
+	}
+
+	// Check if we're authenticated first
+	authClient := NewAuthClient()
+	fmt.Printf("🔍 Checking authentication status...\n")
+	authenticated, token, err := authClient.CheckAuthStatus()
+	if err != nil {
+		fmt.Printf("❌ Failed to check authentication status: %v\n", err)
+		return
+	}
+
+	if !authenticated {
+		fmt.Printf("ℹ️  Not authenticated - cannot fetch user API keys from backend\n")
+		return
+	}
+
+	fmt.Printf("✅ User is authenticated\n")
+
+	// Store the token for backend requests
+	if token != "" {
+		c.authToken = token
+		c.backend.SetAuthToken(token)
+		fmt.Printf("🔑 Stored auth token for backend requests\n")
+	}
+
+	// We're authenticated, try to get the user API key
+	fmt.Printf("🔍 Attempting to fetch user's Cerebras API key from backend...\n")
+	userApiKey, err := c.backend.getUserApiKey("cerebras")
+	if err != nil {
+		fmt.Printf("❌ Failed to get user API key from backend: %v\n", err)
+		return
+	}
+
+	if userApiKey != "" {
+		oldKey := c.apiKey
+		c.apiKey = userApiKey
+		fmt.Printf("✅ Successfully updated to use user's Cerebras API key from Kite backend\n")
+		fmt.Printf("🔑 API key length: %d characters\n", len(userApiKey))
+		keyPreview := userApiKey
+		if len(userApiKey) > 10 {
+			keyPreview = userApiKey[:10]
+		}
+		fmt.Printf("🔄 Changed from: %s to: %s...\n", oldKey, keyPreview)
+	} else {
+		fmt.Printf("ℹ️  No user API key found in backend\n")
+	}
 }
 
 // CreateChat creates a new chat session and returns the chat ID
@@ -510,6 +595,17 @@ Instructions:
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
+	// Debug: show what API key we're using
+	if c.apiKey == "placeholder" {
+		fmt.Printf("⚠️  WARNING: Using placeholder API key for request!\n")
+	} else {
+		keyPreview := c.apiKey
+		if len(c.apiKey) > 10 {
+			keyPreview = c.apiKey[:10]
+		}
+		fmt.Printf("🔑 Using API key: %s... (length: %d)\n", keyPreview, len(c.apiKey))
+	}
+
 	resp, err := c.client.Do(req)
 	if err != nil {
 		errorChan <- fmt.Errorf("failed to make request: %w", err)
@@ -708,6 +804,17 @@ PULL REQUEST WORKFLOW:
 
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+		// Debug: show what API key we're using
+		if c.apiKey == "placeholder" {
+			fmt.Printf("⚠️  WARNING: Using placeholder API key for request!\n")
+		} else {
+			keyPreview := c.apiKey
+			if len(c.apiKey) > 10 {
+				keyPreview = c.apiKey[:10]
+			}
+			fmt.Printf("🔑 Using API key: %s... (length: %d)\n", keyPreview, len(c.apiKey))
+		}
 
 		resp, err := c.client.Do(req)
 		if err != nil {

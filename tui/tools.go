@@ -37,8 +37,9 @@ type ToolResult struct {
 
 // BackendClient handles communication with the TypeScript backend
 type BackendClient struct {
-	baseURL string
-	client  *http.Client
+	baseURL   string
+	client    *http.Client
+	authToken string // Clerk JWT token for authentication
 }
 
 // NewBackendClient creates a new backend client
@@ -843,4 +844,65 @@ func IsGitAction(toolName string) bool {
 		"resolve_merge_conflicts":  true,
 	}
 	return gitTools[toolName]
+}
+
+// SetAuthToken sets the Clerk JWT token for backend authentication
+func (bc *BackendClient) SetAuthToken(token string) {
+	bc.authToken = token
+}
+
+// getUserApiKey fetches a user's API key for a specific provider from the backend
+func (bc *BackendClient) getUserApiKey(provider string) (string, error) {
+	url := fmt.Sprintf("%s/api/user/api-keys/%s", bc.baseURL, provider)
+	fmt.Printf("🔍 Fetching API key from: %s\n", url)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add authorization header if we have a token
+	if bc.authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+bc.authToken)
+		fmt.Printf("🔑 Added authorization header to request\n")
+	} else {
+		fmt.Printf("⚠️  No auth token available for request\n")
+	}
+
+	resp, err := bc.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch API key: %w", err)
+	}
+	defer resp.Body.Close()
+
+	fmt.Printf("📡 API key request status: %d\n", resp.StatusCode)
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("no API key found for provider: %s", provider)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return "", fmt.Errorf("authentication required to access API keys")
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("failed to fetch API key: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error,omitempty"`
+		ApiKey  string `json:"apiKey"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode API key response: %w", err)
+	}
+
+	if !result.Success {
+		return "", fmt.Errorf("API key fetch failed: %s", result.Error)
+	}
+
+	return result.ApiKey, nil
 }

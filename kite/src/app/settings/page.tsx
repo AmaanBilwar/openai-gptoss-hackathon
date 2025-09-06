@@ -49,6 +49,8 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("profile");
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [cerebrasApiKey, setCerebrasApiKey] = useState("");
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const router = useRouter();
 
   // Get Clerk user state and clerk instance
@@ -62,9 +64,11 @@ export default function SettingsPage() {
   // Fetch user data and settings from Convex
   const user = useQuery(api.users.getCurrentUser);
   const userSettings = useQuery(api.users.getUserSettings);
+  const userApiKeys = useQuery(api.users.getUserApiKeys);
 
-  // Delete account mutation
+  // Mutations
   const deleteUserAccount = useMutation(api.users.deleteUserAccount);
+  const saveApiKey = useMutation(api.users.saveApiKey);
 
   // Handle account deletion
   const handleDeleteAccount = async () => {
@@ -108,6 +112,32 @@ export default function SettingsPage() {
       setIsDeleting(false);
     }
     setShowDeleteDialog(open);
+  };
+
+  // Handle API key saving
+  const handleSaveApiKey = async () => {
+    if (!cerebrasApiKey.trim()) {
+      alert("Please enter a valid API key");
+      return;
+    }
+
+    try {
+      setIsSavingApiKey(true);
+      await saveApiKey({
+        provider: "cerebras",
+        keyName: "Cerebras API Key",
+        apiKey: cerebrasApiKey.trim(),
+      });
+
+      // Clear the input and show success message
+      setCerebrasApiKey("");
+      alert("API key saved successfully!");
+    } catch (error) {
+      console.error("Error saving API key:", error);
+      alert("Failed to save API key. Please try again.");
+    } finally {
+      setIsSavingApiKey(false);
+    }
   };
 
   // Memoize tabs to prevent unnecessary re-renders
@@ -1352,15 +1382,170 @@ export default function SettingsPage() {
           )}
           {activeTab === "api" && (
             <>
-              <Card>
-                <CardHeader className="text-center">
-                  <CardTitle className="text-center">API Keys</CardTitle>
-                </CardHeader>
-              </Card>
-              <p className="text-center">
-                Bring your own API keys to use Kite.
-              </p>
-              <p className="text-center">Coming Soon...</p>
+              <div>
+                <h1
+                  className="text-2xl font-bold mb-6"
+                  style={{ color: "hsl(var(--foreground))" }}
+                >
+                  API Keys
+                </h1>
+                <p
+                  className="mb-6"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
+                  Bring your own API keys to use Kite with your preferred AI
+                  models.
+                </p>
+                <Badge
+                  style={{
+                    backgroundColor: "hsl(var(--muted))",
+                    color: "hsl(var(--muted-foreground))",
+                  }}
+                >
+                  <p>You can only add one API key at a time</p>
+                </Badge>
+                <Card
+                  style={{
+                    backgroundColor: "hsl(var(--card))",
+                    borderColor: "hsl(var(--border))",
+                  }}
+                >
+                  <CardHeader>
+                    <CardTitle style={{ color: "hsl(var(--foreground))" }}>
+                      Cerebras API Key
+                    </CardTitle>
+                    <p
+                      className="text-sm"
+                      style={{ color: "hsl(var(--muted-foreground))" }}
+                    >
+                      Add your Cerebras API key to use Cerebras models
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div>
+                        <label
+                          htmlFor="openai-key"
+                          className="block text-sm font-medium mb-2"
+                          style={{ color: "hsl(var(--foreground))" }}
+                        >
+                          API Key
+                        </label>
+                        <input
+                          type="password"
+                          id="openai-key"
+                          placeholder="csk-..."
+                          value={cerebrasApiKey}
+                          onChange={(e) => setCerebrasApiKey(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{
+                            backgroundColor: "hsl(var(--background))",
+                            borderColor: "hsl(var(--border))",
+                            color: "hsl(var(--foreground))",
+                          }}
+                        />
+                        <p
+                          className="text-xs mt-1"
+                          style={{ color: "hsl(var(--muted-foreground))" }}
+                        >
+                          Your API key is stored securely and never shared
+                        </p>
+                      </div>
+                      <Button
+                        className="w-full"
+                        onClick={handleSaveApiKey}
+                        disabled={isSavingApiKey || !cerebrasApiKey.trim()}
+                        style={{
+                          backgroundColor: "hsl(var(--primary))",
+                          color: "hsl(var(--primary-foreground))",
+                        }}
+                      >
+                        {isSavingApiKey ? "Saving..." : "Save API Key"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Existing API Keys */}
+                {userApiKeys && userApiKeys.length > 0 && (
+                  <Card
+                    style={{
+                      backgroundColor: "hsl(var(--card))",
+                      borderColor: "hsl(var(--border))",
+                    }}
+                  >
+                    <CardHeader>
+                      <CardTitle style={{ color: "hsl(var(--foreground))" }}>
+                        Your API Keys
+                      </CardTitle>
+                      <p
+                        className="text-sm"
+                        style={{ color: "hsl(var(--muted-foreground))" }}
+                      >
+                        Manage your saved API keys
+                      </p>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {userApiKeys.map((apiKey) => (
+                          <div
+                            key={apiKey._id}
+                            className="flex items-center justify-between p-3 rounded-lg"
+                            style={{
+                              backgroundColor: "hsl(var(--muted) / 0.5)",
+                            }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="w-2 h-2 rounded-full"
+                                style={{
+                                  backgroundColor: apiKey.isActive
+                                    ? "hsl(var(--green-500))"
+                                    : "hsl(var(--muted-foreground))",
+                                }}
+                              />
+                              <div>
+                                <p
+                                  className="font-medium"
+                                  style={{ color: "hsl(var(--foreground))" }}
+                                >
+                                  {apiKey.keyName || apiKey.provider}
+                                </p>
+                                <p
+                                  className="text-sm"
+                                  style={{
+                                    color: "hsl(var(--muted-foreground))",
+                                  }}
+                                >
+                                  {apiKey.provider} •{" "}
+                                  {apiKey.isActive ? "Active" : "Inactive"}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                style={{
+                                  backgroundColor: apiKey.isActive
+                                    ? "hsl(var(--green-500) / 0.2)"
+                                    : "hsl(var(--muted) / 0.2)",
+                                  color: apiKey.isActive
+                                    ? "hsl(var(--green-500))"
+                                    : "hsl(var(--muted-foreground))",
+                                  borderColor: apiKey.isActive
+                                    ? "hsl(var(--green-500))"
+                                    : "hsl(var(--muted))",
+                                }}
+                              >
+                                {apiKey.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             </>
           )}
           {activeTab !== "profile" &&

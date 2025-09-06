@@ -33,7 +33,21 @@ app.get('/health', (req, res) => {
 app.get('/auth/status', async (req, res) => {
   try {
     const isAuthenticated = await tokenStore.isAuthenticated();
-    res.json({ authenticated: isAuthenticated });
+    
+    // If authenticated, also return the Clerk JWT token for the Go CLI
+    let clerkToken = null;
+    if (isAuthenticated) {
+      try {
+        clerkToken = await tokenStore.getConvexToken();
+      } catch (e) {
+        console.warn('Failed to get Clerk token for auth status:', e);
+      }
+    }
+    
+    res.json({ 
+      authenticated: isAuthenticated,
+      token: clerkToken // Include the token for the Go CLI
+    });
   } catch (error) {
     console.error('Error checking auth status:', error);
     res.status(500).json({ 
@@ -81,9 +95,13 @@ app.post('/api/tools/execute', async (req, res) => {
       }
     } catch {}
 
+    // Fetch user API keys
+    const userApiKeys = await getUserApiKeys(req);
+
     const caller = new GPTOSSToolCaller('gpt-oss-120b', {
       supermemoryApiKey: smApiKey,
-      smUserId
+      smUserId,
+      userApiKeys: userApiKeys || undefined
     });
 
     const result = await caller.callTool(toolCall);
@@ -130,9 +148,13 @@ app.post('/chat', async (req, res) => {
       smUserId = process.env.CLI_USER_ID || 'unknown-user';
     }
 
+    // Fetch user API keys
+    const userApiKeys = await getUserApiKeys(req);
+
     const caller = new GPTOSSToolCaller('gpt-oss-120b', {
       supermemoryApiKey: smApiKey,
-      smUserId
+      smUserId,
+      userApiKeys: userApiKeys || undefined
     });
 
     if (stream) {
@@ -197,10 +219,25 @@ app.post('/api/cli/save-convex-token', async (req, res) => {
 });
 
 // Helper: build Convex client, set auth if Clerk JWT (Convex template) is available
-async function getConvexClientWithAuth(): Promise<ConvexHttpClient> {
+async function getConvexClientWithAuth(req?: express.Request): Promise<ConvexHttpClient> {
   const convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
   try {
-    const token = await tokenStore.getConvexToken();
+    let token = null;
+    
+    // First try to get token from request headers (for Go CLI)
+    if (req && req.headers.authorization) {
+      const authHeader = req.headers.authorization;
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7);
+        console.log('Using Clerk JWT token from request headers');
+      }
+    }
+    
+    // Fallback to tokenStore (for web app)
+    if (!token) {
+      token = await tokenStore.getConvexToken();
+    }
+    
     if (token) {
       // Set Clerk JWT so ctx.auth.getUserIdentity() is available in Convex
       convexClient.setAuth(token);
@@ -211,6 +248,37 @@ async function getConvexClientWithAuth(): Promise<ConvexHttpClient> {
     console.warn("Convex client auth setup failed; proceeding unauthenticated:", e);
   }
   return convexClient;
+}
+
+// Helper: fetch user API keys from Convex
+async function getUserApiKeys(req?: express.Request): Promise<Map<string, string> | null> {
+  try {
+    const convexClient = await getConvexClientWithAuth(req);
+    const hasAuth = await tokenStore.getConvexToken();
+    
+    if (!hasAuth) {
+      return null; // No authentication, can't fetch user API keys
+    }
+
+    const apiKeys = await convexClient.query(api.users.getActiveUserApiKeys, {});
+    
+    if (!apiKeys || apiKeys.length === 0) {
+      return null; // No user API keys found
+    }
+
+    // Convert to Map for easy lookup
+    const apiKeyMap = new Map<string, string>();
+    for (const key of apiKeys) {
+      // Note: In production, you should decrypt the encryptedKey here
+      // For now, we'll assume it's stored as plain text (TODO: implement encryption)
+      apiKeyMap.set(key.provider, key.encryptedKey);
+    }
+
+    return apiKeyMap;
+  } catch (error) {
+    console.warn("Failed to fetch user API keys:", error);
+    return null;
+  }
 }
 
 // Chat persistence endpoints
@@ -399,6 +467,57 @@ app.get('/api/chats/:chatId', async (req, res) => {
     return res.json({ success: true, chat });
   } catch (error) {
     console.error('Error fetching chat:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Get user's API key by provider
+app.get('/api/user/api-keys/:provider', async (req, res) => {
+  try {
+    const { provider } = req.params;
+    
+    if (!provider) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provider is required'
+      });
+    }
+
+    const convexClient = await getConvexClientWithAuth(req);
+    
+    // Check if we have authentication (either from request headers or tokenStore)
+    const hasAuthFromHeaders = req.headers.authorization && req.headers.authorization.startsWith('Bearer ');
+    const hasAuthFromStore = await tokenStore.getConvexToken();
+    
+    if (!hasAuthFromHeaders && !hasAuthFromStore) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const apiKey = await convexClient.query(api.users.getUserApiKeyByProvider, { provider });
+    
+    if (!apiKey) {
+      return res.status(404).json({
+        success: false,
+        error: `No API key found for provider: ${provider}`
+      });
+    }
+
+    // Return the API key (in production, you should decrypt it here)
+    return res.json({
+      success: true,
+      apiKey: apiKey.encryptedKey, // TODO: Implement proper decryption
+      provider: apiKey.provider,
+      keyName: apiKey.keyName,
+      isActive: apiKey.isActive
+    });
+  } catch (error) {
+    console.error('Error fetching user API key:', error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'

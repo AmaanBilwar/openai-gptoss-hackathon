@@ -31,27 +31,28 @@ func NewAuthClient() *AuthClient {
 	}
 }
 
-// CheckAuthStatus checks if the user is authenticated
-func (ac *AuthClient) CheckAuthStatus() (bool, error) {
+// CheckAuthStatus checks if the user is authenticated and returns the token if available
+func (ac *AuthClient) CheckAuthStatus() (bool, string, error) {
 	resp, err := ac.client.Get(ac.baseURL + "/auth/status")
 	if err != nil {
-		return false, fmt.Errorf("failed to check auth status: %w", err)
+		return false, "", fmt.Errorf("failed to check auth status: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("auth status check failed with status %d", resp.StatusCode)
+		return false, "", fmt.Errorf("auth status check failed with status %d", resp.StatusCode)
 	}
 
 	var result struct {
-		Authenticated bool `json:"authenticated"`
+		Authenticated bool   `json:"authenticated"`
+		Token         string `json:"token"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return false, fmt.Errorf("failed to decode auth status response: %w", err)
+		return false, "", fmt.Errorf("failed to decode auth status response: %w", err)
 	}
 
-	return result.Authenticated, nil
+	return result.Authenticated, result.Token, nil
 }
 
 // StartAuthFlow starts the browser-based authentication flow
@@ -80,7 +81,7 @@ func (ac *AuthClient) waitForAuth() error {
 	attempts := 0
 
 	for attempts < maxAttempts {
-		authenticated, err := ac.CheckAuthStatus()
+		authenticated, _, err := ac.CheckAuthStatus()
 		if err != nil {
 			fmt.Printf("⚠️  Auth check failed: %v\n", err)
 		} else if authenticated {
@@ -117,7 +118,7 @@ func openBrowser(url string) error {
 
 // RequireAuth ensures the user is authenticated, starting auth flow if needed
 func (ac *AuthClient) RequireAuth() error {
-	authenticated, err := ac.CheckAuthStatus()
+	authenticated, _, err := ac.CheckAuthStatus()
 	if err != nil {
 		return fmt.Errorf("failed to check authentication status: %w", err)
 	}

@@ -30,19 +30,34 @@ export class GPTOSSToolCaller {
   private convexClient: ConvexHttpClient;
   private supermemoryApiKey?: string;
   private smUserId?: string;
+  private userApiKeys?: Map<string, string>; // provider -> apiKey mapping
   
-  constructor(modelId: string = 'gpt-oss-120b', options?: { supermemoryApiKey?: string; smUserId?: string }) {
+  constructor(modelId: string = 'gpt-oss-120b', options?: { 
+    supermemoryApiKey?: string; 
+    smUserId?: string;
+    userApiKeys?: Map<string, string>;
+  }) {
     this.modelId = modelId;
     
-    // Validate environment configuration
-    validateConfig();
+    // Only validate config if no user API keys are provided
+    if (!options?.userApiKeys) {
+      validateConfig();
+    }
     
     this.supermemoryApiKey = options?.supermemoryApiKey || process.env.SUPERMEMORY_API_KEY;
     this.smUserId = options?.smUserId;
+    this.userApiKeys = options?.userApiKeys;
+
+    // Get API key - prefer user API keys over environment variables
+    const cerebrasApiKey = this.getApiKey('cerebras');
+    
+    if (!cerebrasApiKey) {
+      throw new Error('No Cerebras API key available. Please set CEREBRAS_API_KEY environment variable or provide user API keys.');
+    }
 
     // Standard Cerebras client (SDK). When Supermemory is enabled we will bypass the SDK call with fetch.
     this.client = new Cerebras({
-      apiKey: CEREBRAS_API_KEY
+      apiKey: cerebrasApiKey
     } as any);
     this.githubClient = new GitHubClient();
     this.convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
@@ -723,6 +738,25 @@ Instructions:
 
 
     Reasoning: ${reasoningLevel}`;
+  }
+
+  /**
+   * Get API key for a specific provider, preferring user API keys over environment variables
+   */
+  private getApiKey(provider: string): string | undefined {
+    if (this.userApiKeys && this.userApiKeys.has(provider)) {
+      return this.userApiKeys.get(provider);
+    }
+    
+    // Fallback to environment variables
+    switch (provider.toLowerCase()) {
+      case 'cerebras':
+        return process.env.CEREBRAS_API_KEY;
+      case 'morph':
+        return process.env.MORPH_API_KEY;
+      default:
+        return undefined;
+    }
   }
 
   /**
@@ -1616,12 +1650,12 @@ Instructions:
       }
 
       // No commit message provided - use intelligent splitting
-      const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
+      const cerebrasApiKey = this.getApiKey('cerebras');
       if (!cerebrasApiKey) {
         return {
           success: false,
-          error: 'CEREBRAS_API_KEY environment variable not set',
-          suggestion: 'Please set the CEREBRAS_API_KEY environment variable to use intelligent commit splitting'
+          error: 'No Cerebras API key available',
+          suggestion: 'Please set CEREBRAS_API_KEY environment variable or provide user API keys to use intelligent commit splitting'
         };
       }
       
@@ -2189,7 +2223,7 @@ Instructions:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${CEREBRAS_API_KEY}`,
+        'Authorization': `Bearer ${this.getApiKey('cerebras')}`,
         'x-api-key': this.supermemoryApiKey,
         'x-sm-user-id': this.smUserId || process.env.CLI_USER_ID || 'unknown-user'
       },
