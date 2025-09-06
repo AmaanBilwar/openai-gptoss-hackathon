@@ -7,29 +7,28 @@ import { validateConfig } from './config';
 import { TokenStore } from './tokenStore';
 import { openBrowser } from './utils';
 import { parseMarkdownToText } from './markdownParser';
+import { ConvexHttpClient } from 'convex/browser';
+import { api } from '../../convex/_generated/api';
+import chalk from 'chalk';
+import boxen from 'boxen';
+import ora from 'ora';
 
 /**
  * Poll for authentication completion
  */
 async function waitForAuthentication(tokenStore: TokenStore, maxAttempts: number = 60): Promise<boolean> {
-  console.log('⏳ Waiting for authentication to complete...');
-  console.log('   (This may take a moment after you complete the sign-in process)');
-  
+  const spinner = ora({ text: 'Waiting for authentication…', color: 'cyan' }).start();
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds between checks
-    
+    await new Promise(resolve => setTimeout(resolve, 2000));
     const isAuthenticated = await tokenStore.isAuthenticated();
     if (isAuthenticated) {
-      console.log('✅ Authentication successful!');
+      spinner.succeed(chalk.green('Authentication successful!'));
       return true;
     }
-    
-    // Show progress indicator
     const dots = '.'.repeat((attempt % 3) + 1);
-    process.stdout.write(`\r⏳ Waiting for authentication${dots}   `);
+    spinner.text = `Waiting for authentication${dots}`;
   }
-  
-  console.log('\n❌ Authentication timeout. Please try again.');
+  spinner.fail(chalk.red('Authentication timeout. Please try again.'));
   return false;
 }
 
@@ -41,8 +40,8 @@ export async function startInteractiveChat(): Promise<void> {
   try {
     validateConfig();
   } catch (error) {
-    console.error('❌ Environment configuration error:', error);
-    console.log('Please set up your .env file with the required API keys.');
+    console.error(chalk.red('Environment configuration error:'), error);
+    console.log(chalk.yellow('Please set up your .env file with the required API keys.'));
     return;
   }
 
@@ -51,43 +50,70 @@ export async function startInteractiveChat(): Promise<void> {
   let isAuthenticated = await tokenStore.isAuthenticated();
   
   if (!isAuthenticated) {
-    console.log('🔐 Authentication required');
-    console.log('You need to sign in to use Kite CLI.');
-    console.log('');
-    
+    const header = boxen(
+      `${chalk.bold('Authentication required')}
+${chalk.dim('You need to sign in to use Kite CLI.')}`,
+      { padding: 1, borderColor: 'cyan', borderStyle: 'round' }
+    );
+    console.log(header);
+
     const authUrl = 'http://localhost:3000?from_cli=true';
-    console.log(`Opening browser to: ${authUrl}`);
-    
+    console.log(`${chalk.cyan('Opening browser')} → ${chalk.underline(authUrl)}`);
     try {
       await openBrowser(authUrl);
-      console.log('✅ Browser opened successfully');
+      console.log(chalk.green('Browser opened successfully'));
     } catch (error) {
-      console.log(`Please manually visit: ${authUrl}`);
+      console.log(`${chalk.yellow('Please manually visit')} ${chalk.underline(authUrl)}`);
     }
-    
-    console.log('');
-    console.log('💡 Tip: Make sure the web server is running with "bun run dev"');
-    console.log('');
-    
-    // Wait for authentication to complete
+    console.log(chalk.dim('Tip: ensure the web server is running with "bun run dev"'));
+
     isAuthenticated = await waitForAuthentication(tokenStore);
-    
     if (!isAuthenticated) {
       return;
     }
-    
-    console.log(''); // Add spacing after auth success
+    console.log('');
+  }
+
+  // Attempt to fetch user API keys from Convex for BYOK
+  let userApiKeys: Map<string, string> | undefined;
+  try {
+    const spinner = ora({ text: 'Fetching API keys from Convex…', color: 'cyan' }).start();
+    const convexClient = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    const convexToken = await tokenStore.getConvexToken();
+    if (convexToken) {
+      convexClient.setAuth(convexToken);
+      const keys = await convexClient.query(api.users.getActiveUserApiKeys, {} as any);
+      if (keys && (keys as any[]).length > 0) {
+        const map = new Map<string, string>();
+        for (const k of keys as any[]) {
+          map.set(k.provider, k.encryptedKey);
+        }
+        userApiKeys = map;
+        spinner.succeed('Loaded API keys from Convex');
+      } else {
+        spinner.info('No API keys found in Convex; falling back to environment variables');
+      }
+    } else {
+      spinner.info('Not authenticated with Convex; falling back to environment variables');
+    }
+  } catch (e) {
+    ora().warn('Failed to fetch API keys from Convex; falling back to environment variables');
   }
 
   const caller = new GPTOSSToolCaller('gpt-oss-120b', {
-    supermemoryApiKey: process.env.SUPERMEMORY_API_KEY,
-    smUserId: process.env.CLI_USER_ID || 'cli-user'
+    // Do not pass supermemoryApiKey; we aren't using Supermemory by default
+    smUserId: process.env.CLI_USER_ID || 'cli-user',
+    userApiKeys,
   });
   const messages: ChatMessage[] = [];
 
-  console.log('Welcome to Kite! Your AI-powered GitHub assistant.');
-  console.log('Type your requests and I\'ll help you manage your repositories.');
-  console.log('Type "exit" or "quit" to end the session.\n');
+  const banner = boxen(
+    `${chalk.bold('Welcome to Kite')} ${chalk.dim('— your AI-powered GitHub assistant')}
+${chalk.dim('Type your request and press Enter.')}
+${chalk.dim('Type "exit" or "quit" to end the session.')}`,
+    { padding: 1, borderColor: 'cyan', borderStyle: 'round' }
+  );
+  console.log(banner);
 
   // Create readline interface with better Windows support
   const rl = readline.createInterface({
@@ -105,14 +131,14 @@ export async function startInteractiveChat(): Promise<void> {
     while (true) {
       // Get user input
       const userInput = await new Promise<string>((resolve) => {
-        rl.question('You: ', (input) => {
+        rl.question(`${chalk.cyan('You')}: `, (input) => {
           resolve(input.trim());
         });
       });
 
       // Handle exit commands
       if (!userInput || ['exit', 'quit', 'bye'].includes(userInput.toLowerCase())) {
-        console.log('👋 Goodbye! Thanks for using Kite.');
+        console.log(`${chalk.green('Goodbye!')} ${chalk.dim('Thanks for using Kite.')}`);
         break;
       }
 
@@ -123,7 +149,7 @@ export async function startInteractiveChat(): Promise<void> {
       });
 
       // Get AI response with streaming
-      console.log('🤖 Kite: ');
+      console.log(`${chalk.magenta('Kite')}: `);
       const responseChunks: string[] = [];
       
       try {

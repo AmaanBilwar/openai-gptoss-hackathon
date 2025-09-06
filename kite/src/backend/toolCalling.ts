@@ -44,7 +44,8 @@ export class GPTOSSToolCaller {
       validateConfig();
     }
     
-    this.supermemoryApiKey = options?.supermemoryApiKey || process.env.SUPERMEMORY_API_KEY;
+    // Supermemory is opt-in only via explicit constructor option
+    this.supermemoryApiKey = options?.supermemoryApiKey;
     this.smUserId = options?.smUserId;
     this.userApiKeys = options?.userApiKeys;
 
@@ -1346,9 +1347,6 @@ Instructions:
       
       while (turnCount < maxTurns) {
         turnCount++;
-        
-        console.log(`Turn ${turnCount}: Making API call with ${apiMessages.length} messages`);
-        
         // Make API call
         const response = await this.createChatCompletion({
           messages: apiMessages,
@@ -1361,9 +1359,6 @@ Instructions:
         
         const choice = (response as any).choices[0];
         const message = choice.message;
-        
-        console.log(`Turn ${turnCount}: Response received, tool_calls:`, message.tool_calls ? message.tool_calls.length : 0);
-        
         // If no tool calls, we're done - stream the final response
         if (!message.tool_calls || message.tool_calls.length === 0) {
           // Only yield content if it's meaningful and not just tool execution commentary

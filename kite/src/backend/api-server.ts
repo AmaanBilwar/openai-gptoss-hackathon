@@ -83,7 +83,7 @@ app.post('/api/tools/execute', async (req, res) => {
         arguments: JSON.stringify(parameters)
       }
     };
-    const smApiKey = process.env.SUPERMEMORY_API_KEY;
+    const smApiKey = undefined; // Supermemory disabled by default
     // Best-effort user id resolution
     let smUserId: string | undefined = process.env.CLI_USER_ID;
     try {
@@ -99,7 +99,6 @@ app.post('/api/tools/execute', async (req, res) => {
     const userApiKeys = await getUserApiKeys(req);
 
     const caller = new GPTOSSToolCaller('gpt-oss-120b', {
-      supermemoryApiKey: smApiKey,
       smUserId,
       userApiKeys: userApiKeys || undefined
     });
@@ -132,7 +131,7 @@ app.post('/chat', async (req, res) => {
     }));
 
     
-    const smApiKey = process.env.SUPERMEMORY_API_KEY;
+    const smApiKey = undefined; // Supermemory disabled by default
     let smUserId: string | undefined = userId as string | undefined;
     if (!smUserId) {
       try {
@@ -152,7 +151,6 @@ app.post('/chat', async (req, res) => {
     const userApiKeys = await getUserApiKeys(req);
 
     const caller = new GPTOSSToolCaller('gpt-oss-120b', {
-      supermemoryApiKey: smApiKey,
       smUserId,
       userApiKeys: userApiKeys || undefined
     });
