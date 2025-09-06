@@ -171,12 +171,12 @@ ${chalk.dim('Type "exit" or "quit" to end the session.')}`,
         });
 
       } catch (error) {
-        console.error('\n❌ Error getting AI response:', error);
-        console.log('Please try again or check your API configuration.\n');
+        console.error(`\n${chalk.red('Error getting AI response:')}`, error);
+        console.log(chalk.yellow('Please try again or check your API configuration.\n'));
       }
     }
   } catch (error) {
-    console.error('❌ Chat session error:', error);
+    console.error(chalk.red('Chat session error:'), error);
   } finally {
     rl.close();
   }
