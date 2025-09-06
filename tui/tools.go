@@ -875,8 +875,6 @@ func (bc *BackendClient) getUserApiKey(provider string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	fmt.Printf("📡 API key request status: %d\n", resp.StatusCode)
-
 	if resp.StatusCode == http.StatusNotFound {
 		return "", fmt.Errorf("no API key found for provider: %s", provider)
 	}

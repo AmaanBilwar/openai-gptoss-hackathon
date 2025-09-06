@@ -12,14 +12,14 @@ export default function SSOCallbackPage() {
   useEffect(() => {
     if (isLoaded && isSignedIn) {
       // Check if this was a CLI-initiated auth
-      const fromCLI = searchParams.get('from_cli') === 'true';
-      
+      const fromCLI = searchParams.get("from_cli") === "true";
+
       if (fromCLI) {
         // Redirect to CLI auth success page
-        router.replace('/cli-auth-success');
+        router.replace("/dashboard");
       } else {
         // Normal web flow - redirect to dashboard
-        router.replace('/dashboard');
+        router.replace("/dashboard");
       }
     }
   }, [isLoaded, isSignedIn, router, searchParams]);

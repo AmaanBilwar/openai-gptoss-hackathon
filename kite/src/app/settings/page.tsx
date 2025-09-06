@@ -51,6 +51,8 @@ export default function SettingsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [cerebrasApiKey, setCerebrasApiKey] = useState("");
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+  const [deletingKeyId, setDeletingKeyId] = useState<string | null>(null);
   const router = useRouter();
 
   // Get Clerk user state and clerk instance
@@ -69,6 +71,13 @@ export default function SettingsPage() {
   // Mutations
   const deleteUserAccount = useMutation(api.users.deleteUserAccount);
   const saveApiKey = useMutation(api.users.saveApiKey);
+  const deleteApiKey = useMutation(api.users.deleteApiKey);
+
+  // Validate Cerebras API key format: must start with "csk-" and have 48 chars after
+  const isValidCerebrasKey = useMemo(() => {
+    if (!cerebrasApiKey) return false;
+    return /^csk-[a-z0-9]{48}$/.test(cerebrasApiKey.trim());
+  }, [cerebrasApiKey]);
 
   // Handle account deletion
   const handleDeleteAccount = async () => {
@@ -117,7 +126,14 @@ export default function SettingsPage() {
   // Handle API key saving
   const handleSaveApiKey = async () => {
     if (!cerebrasApiKey.trim()) {
-      alert("Please enter a valid API key");
+      setApiKeyError("Please enter a Cerebras API key");
+      return;
+    }
+
+    if (!isValidCerebrasKey) {
+      setApiKeyError(
+        "Invalid key. Must start with csk- and have 48 lowercase letters or numbers after it."
+      );
       return;
     }
 
@@ -131,12 +147,45 @@ export default function SettingsPage() {
 
       // Clear the input and show success message
       setCerebrasApiKey("");
+      setApiKeyError(null);
       alert("API key saved successfully!");
     } catch (error) {
       console.error("Error saving API key:", error);
-      alert("Failed to save API key. Please try again.");
+      const message =
+        error instanceof Error ? error.message : "Failed to save API key.";
+      alert(message);
     } finally {
       setIsSavingApiKey(false);
+    }
+  };
+
+  const handleApiKeyInput = (value: string) => {
+    setCerebrasApiKey(value);
+    if (!value) {
+      setApiKeyError(null);
+      return;
+    }
+    if (/^csk-[a-z0-9]{48}$/.test(value.trim())) {
+      setApiKeyError(null);
+    } else {
+      setApiKeyError(
+        "Invalid key. Must start with csk- and have 48 lowercase letters or numbers after it."
+      );
+    }
+  };
+
+  const handleDeleteApiKey = async (apiKeyId: string) => {
+    if (!apiKeyId) return;
+    const confirmed = confirm("Delete this API key? This cannot be undone.");
+    if (!confirmed) return;
+    try {
+      setDeletingKeyId(apiKeyId);
+      await deleteApiKey({ apiKeyId: apiKeyId as any });
+    } catch (error) {
+      console.error("Error deleting API key:", error);
+      alert("Failed to delete API key. Please try again.");
+    } finally {
+      setDeletingKeyId(null);
     }
   };
 
@@ -1436,7 +1485,7 @@ export default function SettingsPage() {
                           id="openai-key"
                           placeholder="csk-..."
                           value={cerebrasApiKey}
-                          onChange={(e) => setCerebrasApiKey(e.target.value)}
+                          onChange={(e) => handleApiKeyInput(e.target.value)}
                           className="w-full px-3 py-2 rounded-lg border"
                           style={{
                             backgroundColor: "hsl(var(--background))",
@@ -1444,17 +1493,42 @@ export default function SettingsPage() {
                             color: "hsl(var(--foreground))",
                           }}
                         />
-                        <p
-                          className="text-xs mt-1"
-                          style={{ color: "hsl(var(--muted-foreground))" }}
-                        >
-                          Your API key is stored securely and never shared
-                        </p>
+                        <div className="mt-1 space-y-1">
+                          <p
+                            className="text-xs"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Your API key is stored securely and never shared
+                          </p>
+                          {cerebrasApiKey && (
+                            <p
+                              className="text-xs"
+                              style={{
+                                color: apiKeyError
+                                  ? "hsl(var(--destructive))"
+                                  : "hsl(var(--green-500))",
+                              }}
+                            >
+                              {apiKeyError || "Looks good."}
+                            </p>
+                          )}
+                          <p
+                            className="text-xs"
+                            style={{ color: "hsl(var(--muted-foreground))" }}
+                          >
+                            Format: csk- followed by 48 lowercase letters or
+                            numbers.
+                          </p>
+                        </div>
                       </div>
                       <Button
                         className="w-full"
                         onClick={handleSaveApiKey}
-                        disabled={isSavingApiKey || !cerebrasApiKey.trim()}
+                        disabled={
+                          isSavingApiKey ||
+                          !cerebrasApiKey.trim() ||
+                          !isValidCerebrasKey
+                        }
                         style={{
                           backgroundColor: "hsl(var(--primary))",
                           color: "hsl(var(--primary-foreground))",
@@ -1538,6 +1612,19 @@ export default function SettingsPage() {
                               >
                                 {apiKey.isActive ? "Active" : "Inactive"}
                               </Badge>
+                              <Button
+                                variant="destructive"
+                                className="flex items-center gap-1 bg-red-500 hover:bg-red-600"
+                                onClick={() =>
+                                  handleDeleteApiKey(apiKey._id as any)
+                                }
+                                disabled={deletingKeyId === (apiKey._id as any)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                {deletingKeyId === (apiKey._id as any)
+                                  ? "Deleting..."
+                                  : "Delete"}
+                              </Button>
                             </div>
                           </div>
                         ))}

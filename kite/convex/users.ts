@@ -505,6 +505,30 @@ export const saveApiKey = mutation({
     const userId = identity.subject;
     const now = Date.now();
 
+    // Normalize inputs
+    const providerNormalized = args.provider.trim().toLowerCase();
+    const rawKey = args.apiKey.trim();
+
+    // Validate API key format for Cerebras
+    if (providerNormalized === "cerebras") {
+      if (!rawKey.startsWith("csk-")) {
+        throw new Error(
+          "Invalid Cerebras API key. Must start with csk-."
+        );
+      }
+      const suffix = rawKey.slice(4);
+      if (suffix.length !== 48) {
+        throw new Error(
+          "Invalid Cerebras API key. Must have 48 characters after csk-."
+        );
+      }
+      if (!/^[a-z0-9]+$/.test(suffix)) {
+        throw new Error(
+          "Invalid Cerebras API key. Only lowercase letters and numbers are allowed after csk-."
+        );
+      }
+    }
+
     // For now, we'll store the key as-is. In production, you should encrypt it
     // using a proper encryption library like crypto-js or similar
     const encryptedKey = args.apiKey; // TODO: Implement proper encryption
@@ -512,8 +536,8 @@ export const saveApiKey = mutation({
     // Check if an API key for this provider already exists
     const existingKey = await ctx.db
       .query("apiKeys")
-      .withIndex("by_user_provider", (q) => 
-        q.eq("userId", userId).eq("provider", args.provider)
+      .withIndex("by_user_provider", (q) =>
+        q.eq("userId", userId).eq("provider", providerNormalized)
       )
       .unique();
 
@@ -530,7 +554,7 @@ export const saveApiKey = mutation({
       // Create new key
       return await ctx.db.insert("apiKeys", {
         userId: userId,
-        provider: args.provider,
+        provider: providerNormalized,
         keyName: args.keyName,
         encryptedKey: encryptedKey,
         isActive: true,

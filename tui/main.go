@@ -711,14 +711,6 @@ I'll open your browser to complete the authentication process.
 		// Show success message
 		successMessage := `# ✅ Authentication Complete!
 
-**Authentication completed successfully!**
-
-You can now continue using Kite with all features including:
-
-- 🔗 GitHub repository access
-- 🛠️ Tool calling capabilities
-- 📊 Repository analytics
-
 *Ready to help you with your Git workflow!*`
 		renderedSuccess := renderMarkdown(successMessage)
 		m.messages = append(m.messages, textStyle.Render("Kite: ")+renderedSuccess)
